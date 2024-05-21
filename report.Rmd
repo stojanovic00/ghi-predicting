@@ -1,0 +1,23 @@
+---
+title: Analiza skupa podataka
+date: "`r format(Sys.time(), '%d. %B %Y')`"
+author: Aleksandar Stojanović 
+output: html_document
+---
+
+# Uvod
+
+# Učitavanje podataka
+
+
+#install.packages("BiocManager")
+#BiocManager::install("rhdf5")
+
+library(rhdf5)
+
+h5_file <- H5Fopen("./dataset/vietnam_2016.h5")
+h5_file
+
+
+
+
