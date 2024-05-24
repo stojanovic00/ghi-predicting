@@ -7,17 +7,45 @@ output: html_document
 
 # Uvod
 
-# Učitavanje podataka
+# Rad
+
+## Instalacija neophodnih paketa i uključivanje biblioteka
+
+``` {r Installing packages ,eval = F, include = T } 
+install.packages("BiocManager")
+BiocManager::install("rhdf5")
+
+```
 
 
-#install.packages("BiocManager")
-#BiocManager::install("rhdf5")
 
+``` {r Including libraries, results="hide", message = F}
 library(rhdf5)
+library(ggplot2)
+library(dplyr)
+library(lubridate)
 
+```
+
+## Ucitavanje podataka u izvnornom formatu
+
+``` {r Raw file loading}
 h5_file <- H5Fopen("./dataset/vietnam_2016.h5")
+
+
+air_temp <- h5read(h5_file, "/air_temperature") # celsius
+coordinates <- h5read(h5_file, "/coordinates") # angle
+ghi <- h5read(h5_file, "/ghi") #kwh/m^2
+meta <- h5read(h5_file, "/meta") # elevation described in m
+time_index <- h5read(h5_file, "/time_index") # date
+wind_speed <- h5read(h5_file, "/wind_speed") # m/s
+
 h5_file
+```
 
 
+Zakljucujemo da imamo 75361 redova zbog 75361 koordinate koje se posmatraju i svaki red sadrzi onoliko kolona koliko je bilo merenja u razlicitim vremenskim trenucima.
+
+Kolona ima koliko i sati koliko je posmatranje trajalo: 366 * 24 = 8784 
 
 

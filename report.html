@@ -351,13 +351,57 @@ display: none;
 
 <h1 class="title toc-ignore">Analiza skupa podataka</h1>
 <h4 class="author">Aleksandar Stojanović</h4>
-<h4 class="date">16. May 2024</h4>
+<h4 class="date">26. May 2024</h4>
 
 </div>
 
 
 <div id="uvod" class="section level1">
 <h1>Uvod</h1>
+</div>
+<div id="rad" class="section level1">
+<h1>Rad</h1>
+<div id="instalacija-neophodnih-paketa-i-uključivanje-biblioteka" class="section level2">
+<h2>Instalacija neophodnih paketa i uključivanje biblioteka</h2>
+<pre class="r"><code>install.packages(&quot;BiocManager&quot;)
+BiocManager::install(&quot;rhdf5&quot;)</code></pre>
+<pre class="r"><code>library(rhdf5)
+library(ggplot2)
+library(dplyr)
+library(lubridate)</code></pre>
+</div>
+<div id="ucitavanje-podataka-u-izvnornom-formatu" class="section level2">
+<h2>Ucitavanje podataka u izvnornom formatu</h2>
+<pre class="r"><code>h5_file &lt;- H5Fopen(&quot;./dataset/vietnam_2016.h5&quot;)
+
+
+air_temp &lt;- h5read(h5_file, &quot;/air_temperature&quot;) # celsius
+coordinates &lt;- h5read(h5_file, &quot;/coordinates&quot;) # angle
+ghi &lt;- h5read(h5_file, &quot;/ghi&quot;) #kwh/m^2
+meta &lt;- h5read(h5_file, &quot;/meta&quot;) # elevation described in m
+time_index &lt;- h5read(h5_file, &quot;/time_index&quot;) # date
+wind_speed &lt;- h5read(h5_file, &quot;/wind_speed&quot;) # m/s
+
+h5_file</code></pre>
+<pre><code>## HDF5 FILE 
+##         name /
+##     filename 
+## 
+##              name       otype   dclass          dim
+## 0 air_temperature H5I_DATASET INTEGER  75361 x 8784
+## 1 coordinates     H5I_DATASET FLOAT    2 x 75361   
+## 2 dhi             H5I_DATASET INTEGER  75361 x 8784
+## 3 dni             H5I_DATASET INTEGER  75361 x 8784
+## 4 ghi             H5I_DATASET INTEGER  75361 x 8784
+## 5 meta            H5I_DATASET COMPOUND 75361       
+## 6 time_index      H5I_DATASET STRING   8784        
+## 7 wind_speed      H5I_DATASET INTEGER  75361 x 8784</code></pre>
+<p>Zakljucujemo da imamo 75361 redova zbog 75361 koordinate koje se
+posmatraju i svaki red sadrzi onoliko kolona koliko je bilo merenja u
+razlicitim vremenskim trenucima.</p>
+<p>Kolona ima koliko i sati koliko je posmatranje trajalo: 366 * 24 =
+8784</p>
+</div>
 </div>
 
 
