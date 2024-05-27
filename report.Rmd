@@ -7,6 +7,21 @@ output: html_document
 
 # Uvod
 
+
+Globalno horizontalno zračenje (GHI), ili ukupna količina kratkotalasnog sunčevog zračenja koje dospe na  zemlj inu površinu, predstavlja ključni parametar za solarne elektrane. Ova vrednost, koja obuhvata i direktno i difuzno sunčevo zračenje, trenutno se meri geo-stacionarnim satelitima.
+
+Predviđanje perioda sa visokim GHI indeksom omogućava solarnim elektranama  proaktivni pristup optimizaciji rada. To se ogleda u:
+
+- Preventivnom održavanju: Planiranje radova van perioda sa visokim potencijalom za proizvodnju solarne energije.
+- Optimizaciji performansi: Usklađivanje rada panela i invertera za maksimalni učinak tokom perioda visokog GHI indeksa.
+- Strategiji rasporeda radne snage: Obezbeđavanje dovoljno osoblja za praćenje i reagovanje na potencijalne probleme tokom očekivanog vrha u proizvodnji.
+
+
+# Skup podataka
+
+Skup podataka odnosi se na merenje GHI zracenja na podrucju Vijetnama i javno je dostupan na adresi 
+https://data.openei.org/s3_viewer?bucket=nrel-pds-nsrdb&prefix=vietnam%2F, koje je objavila [NREL](https://nsrdb.nrel.gov/) (National Solar Radiation Database) i dostupno je pod licencom Creative Commons Attribution 3.0 United States License.
+
 # Rad
 
 ## Instalacija neophodnih paketa i uključivanje biblioteka
@@ -14,7 +29,7 @@ output: html_document
 ``` {r Installing packages ,eval = F, include = T } 
 install.packages("BiocManager")
 BiocManager::install("rhdf5")
-
+install.packages("kableExtra")
 ```
 
 
@@ -24,19 +39,19 @@ library(rhdf5)
 library(ggplot2)
 library(dplyr)
 library(lubridate)
-
+library(kableExtra)
 ```
 
-## Ucitavanje podataka u izvnornom formatu
+## Ucitavanje podataka u izvornom formatu
 
+Temperaturu vazduha i brzinu vetra takodje je moguce meriti pomocu satelita
 ``` {r Raw file loading}
 h5_file <- H5Fopen("./dataset/vietnam_2016.h5")
 
-
 air_temp <- h5read(h5_file, "/air_temperature") # celsius
 coordinates <- h5read(h5_file, "/coordinates") # angle
-ghi <- h5read(h5_file, "/ghi") #kwh/m^2
-meta <- h5read(h5_file, "/meta") # elevation described in m
+ghi <- h5read(h5_file, "/ghi") #W/m^2
+meta <- h5read(h5_file, "/meta") # elevation: m
 time_index <- h5read(h5_file, "/time_index") # date
 wind_speed <- h5read(h5_file, "/wind_speed") # m/s
 
@@ -47,5 +62,132 @@ h5_file
 Zakljucujemo da imamo 75361 redova zbog 75361 koordinate koje se posmatraju i svaki red sadrzi onoliko kolona koliko je bilo merenja u razlicitim vremenskim trenucima.
 
 Kolona ima koliko i sati koliko je posmatranje trajalo: 366 * 24 = 8784 
+
+## Filtriranje podataka i priprema za obradu
+
+Budući da nas zanima klasifikacija zračenja u letnjem periodu filtriramo podatke koji su
+izmereni od 21. juna (172. dan) do 22. septembra (266. dan)
+
+```{r Calculating summer days}
+summer_start <- 172 # day number
+summer_end <- 266 
+
+summer_hours <- (summer_start * 24) : (summer_end * 24)
+
+sunrise <- 5 
+sunset <- 19
+
+sunny_hours <- summer_hours[summer_hours %% 24 %in% (sunrise + 1):(sunset + 1)]
+
+
+coordinate_step <- 10
+
+#Δlatitude = 5 degrees (differential of latitude)
+#Δlongitude = 5 degrees (differential of longitude)
+
+# Earth's average radius ≈ 6,371 kilometers
+# Area = 5° * 5° * 6,371 km ≈ 159,275 square kilometers
+
+
+time_measures_per_coor <- length(sunny_hours)
+
+coor_num = nrow(air_temp)
+
+selected_rows = seq(1, coor_num, by = coordinate_step)
+
+coor_num <- length(selected_rows)
+```
+
+
+
+
+Kada smo zakljucili opseg podataka (selected_rows, sunny_hours) za letnji period u suncem obasjanim intervalima,
+ektrahujemo podatke iz h5 matrice i pretvaramo ih u tabelarni format pogodan za dalje koriscenje.
+```{r Converting h5 matrix to table represantation}
+
+id <- 1:(coor_num * time_measures_per_coor)
+
+latitude <- rep(coordinates[1, selected_rows], each = time_measures_per_coor)
+longitude <- rep(coordinates[2, selected_rows], each = time_measures_per_coor)
+elevation <- rep(meta[selected_rows,"elevation"], each = time_measures_per_coor)
+rm(coordinates)
+
+
+time <- rep(time_index[sunny_hours], coor_num)
+
+air_temp <- c(air_temp[selected_rows, sunny_hours])
+wind_speed <- c(wind_speed[selected_rows, sunny_hours])
+ghi <- c(ghi[selected_rows, sunny_hours])
+
+df <- data.frame(id, time, latitude, longitude, elevation, air_temp, wind_speed, ghi)
+
+df <- df %>%
+  filter(ghi != 0) %>%
+  mutate(time = ymd_hms(strptime(time, "%Y-%m-%d %H:%M:%S")))
+
+# closing all HDF5 handles
+h5closeAll()
+# removing  helper arrays
+rm(id, time, latitude, longitude, elevation, air_temp, wind_speed, ghi, h5_file, meta)
+# removing helper values
+rm(coor_num, coordinate_step, selected_rows, summer_end, summer_hours, summer_start, sunny_hours, sunrise,
+   sunset, time_index, time_measures_per_coor)
+```
+
+## Prikaz pripremljenih podataka
+
+### Prvih 20 redova
+
+``` {r Showing first 20 rows, echo = F}
+knitr::kable(head(df, n=20),
+             col.names = c("id",
+                           "time",
+                           "latitude",
+                           "longitude",
+                           "elevation",
+                           "air_temp",
+                           "wind_speed",
+                           "ghi"),
+             label = "Tabelarni prikaz prečišćenih podataka",
+             format = "html",
+             ) %>%
+  kableExtra::kable_styling(bootstrap_options = "bordered", full_width = F, font_size = 16)
+```
+
+
+### Nasumicnih 20 redova
+
+```{r Showing random 20 rows}
+set.seed(10)
+
+random_rows <- sample(1:nrow(df), size = 20, replace = FALSE)
+df_random <- df %>% 
+  slice(random_rows)
+  
+knitr::kable(df_random,
+             col.names = c("id",
+                           "time",
+                           "latitude",
+                           "longitude",
+                           "elevation",
+                           "air_temp",
+                           "wind_speed",
+                           "ghi"),
+             label = "Tabelarni prikaz prečišćenih podataka",
+             format = "html",
+             ) %>%
+  kableExtra::kable_styling(bootstrap_options = "bordered", full_width = F, font_size = 16)
+  
+
+rm(random_rows, df_random)
+```
+
+
+
+
+
+
+
+
 
 
