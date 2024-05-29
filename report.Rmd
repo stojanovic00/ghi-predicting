@@ -1,5 +1,5 @@
 ---
-title: Analiza skupa podataka
+title: Analiza skupa podataka o svetlosnom zračenju u području Tajvana
 date: "`r format(Sys.time(), '%d. %B %Y')`"
 author: Aleksandar Stojanović 
 output: html_document
@@ -30,6 +30,9 @@ https://data.openei.org/s3_viewer?bucket=nrel-pds-nsrdb&prefix=vietnam%2F, koje 
 install.packages("BiocManager")
 BiocManager::install("rhdf5")
 install.packages("kableExtra")
+install.packages("ggpubr")
+install.packages("sparklyr")
+install.packages("caret")
 ```
 
 
@@ -38,8 +41,33 @@ install.packages("kableExtra")
 library(rhdf5)
 library(ggplot2)
 library(dplyr)
+library(magrittr)
 library(lubridate)
 library(kableExtra)
+library(ggpubr)
+library(sparklyr)
+library(caret)
+# Zbog reproduktibilnosti nasumicnih operacija
+set.seed(10)
+```
+
+## Instaliranje i inicijalizacija spark radnog okruzenja
+
+```{r Installing and setting up spark environment}
+spark_install(version="3.3.2")
+Sys.setenv(JAVA_HOME="/usr/lib/jvm/java-11-openjdk")
+knitr::opts_knit$set(root.dir = "/mnt/StorageSpace/StorageSpace/repositories/ghi-predicting")
+
+
+
+# Ovim prosirujemo java heap sparka da bi mogli da smestimo nas set podataka u njega
+conf <- spark_config()
+conf$`sparklyr.shell.driver-memory` <- "16G"
+conf$spark.memory.fraction <- 0.9
+
+
+
+sc <- spark_connect(master = "local", version="3.3.2", config = conf)
 ```
 
 ## Ucitavanje podataka u izvornom formatu
@@ -102,8 +130,8 @@ coor_num <- length(selected_rows)
 
 
 Kada smo zakljucili opseg podataka (selected_rows, sunny_hours) za letnji period u suncem obasjanim intervalima,
-ektrahujemo podatke iz h5 matrice i pretvaramo ih u tabelarni format pogodan za dalje koriscenje.
-```{r Converting h5 matrix to table represantation}
+ekstrahujemo podatke iz h5 matrice i pretvaramo ih u tabelarni format pogodan za dalje koriscenje.
+```{r Converting h5 matrix to table representation}
 
 id <- 1:(coor_num * time_measures_per_coor)
 
@@ -136,18 +164,18 @@ rm(coor_num, coordinate_step, selected_rows, summer_end, summer_hours, summer_st
 
 ## Prikaz pripremljenih podataka
 
-### Prvih 20 redova
+### Prvih 10 redova
 
-``` {r Showing first 20 rows, echo = F}
-knitr::kable(head(df, n=20),
+``` {r Showing first 10 rows, echo = F}
+knitr::kable(head(df, n=10),
              col.names = c("id",
                            "time",
-                           "latitude",
-                           "longitude",
-                           "elevation",
-                           "air_temp",
-                           "wind_speed",
-                           "ghi"),
+                           "latitude[°]",
+                           "longitude[°]",
+                           "elevation[m]",
+                           "air_temp[°C]",
+                           "wind_speed[m/s]",
+                           "ghi[W/m²]"),
              label = "Tabelarni prikaz prečišćenih podataka",
              format = "html",
              ) %>%
@@ -155,24 +183,23 @@ knitr::kable(head(df, n=20),
 ```
 
 
-### Nasumicnih 20 redova
+### Nasumicnih 10 redova
 
-```{r Showing random 20 rows}
-set.seed(10)
+```{r Showing random 10 rows, echo = F}
 
-random_rows <- sample(1:nrow(df), size = 20, replace = FALSE)
+random_rows <- sample(1:nrow(df), size = 10, replace = FALSE)
 df_random <- df %>% 
   slice(random_rows)
   
 knitr::kable(df_random,
              col.names = c("id",
                            "time",
-                           "latitude",
-                           "longitude",
-                           "elevation",
-                           "air_temp",
-                           "wind_speed",
-                           "ghi"),
+                           "latitude[°]",
+                           "longitude[°]",
+                           "elevation[m]",
+                           "air_temp[°C]",
+                           "wind_speed[m/s]",
+                           "ghi[W/m²]"),
              label = "Tabelarni prikaz prečišćenih podataka",
              format = "html",
              ) %>%
@@ -183,11 +210,359 @@ rm(random_rows, df_random)
 ```
 
 
+## Preliminarna analiza podataka
+
+### Deskriptivne statistike po pojedinačnim obeležjima
+
+#### Opseg geografske sirine, duzine i vremena merenja
+```{r Coordinate and time ranges, echo = F}
+ranges <- rbind(
+  range(df$latitude),
+  range(df$longitude),
+ format(range(df$time), "%d-%m-%Y %H:%M")  # Include hours (HH) and minutes (MM)
+)
+
+colnames(ranges) <- c("Min/Start", "Max/End")
+rownames(ranges) <- c("Latitude", "Longitude", "Measurment time")
+
+knitr::kable(format(ranges, scientific  = F),
+             label = "Tabelarni prikaz opsega merenja",
+             format = "html"
+) %>%
+  kableExtra::kable_styling(bootstrap_options = "bordered", full_width = FALSE, font_size = 16)
+```
+
+![Oblast merenja](dataset/dataset_coor_range.png)
+
+#### Deskriptivne statistike preostalih obelezja
+
+```{r Summaries for all the other variables, echo = F}
+summaries <- rbind(summary(df$elevation),
+                   summary(df$air_temp),
+                   summary(df$wind_speed),
+                   summary(df$ghi))
+
+rownames(summaries) = c("Elevation[m]", "Air Temperature[°C]", "Wind Speed[m/s]", "GHI[W/m²]")
+
+knitr::kable(summaries,
+             label = "Tabelarni prikaz deskriptivnih statistika",
+             format = "html"
+) %>%
+  kableExtra::kable_styling(bootstrap_options = "bordered", full_width = FALSE, font_size = 16)
+```
 
 
 
+### Vizualizacije raspodela po pojedinačnim obeležjima
+
+```{r Values distribution diagrams, echo=F, fig.width=15, fig.height=15}
+plot_elevation <- ggplot(df)+
+  geom_histogram(
+    mapping = aes(
+      x = elevation,
+    ),
+    bins = 30,
+    colour = "black",
+    fill = "gray",
+  )+
+  labs(
+    title = "Elevation distribution",
+    x = "Elevation [m]",
+    y = "Frequency"
+  )
+
+
+plot_air_temp <- ggplot(df)+
+  geom_histogram(
+    mapping = aes(
+      x = air_temp
+    ),
+    bins = 30,
+    colour = "black",
+    fill = "gray",
+  )+
+  labs(
+    title = "Air temperature distribution",
+    x = "Air temperature [°C]",
+    y = "Frequency"
+  )
+
+plot_wind_speed <- ggplot(df)+
+  geom_density(
+    mapping = aes(
+      x = wind_speed
+    ),
+    colour = "black",
+    fill = "gray",
+  )+
+  labs(
+    title = "Wind speed distribution",
+    x = "Wind speed [m/s]",
+    y = "Density"
+  )
+
+plot_ghi_dens <- ggplot(df)+
+  geom_density(
+    mapping = aes(
+      x = ghi
+    ),
+    colour = "black",
+    fill = "gray",
+  )+
+  labs(
+    title = "GHI distribution",
+    x = "GHI [W/m²]",
+    y = "Density"
+  )
+
+plot_ghi_box <- ggplot(df) +
+  geom_boxplot(mapping = aes(x = ghi)) +
+  labs(
+    title = "GHI distribution",
+    x = "GHI [W/m²]",
+  )
+
+ggarrange(plot_elevation,
+          plot_air_temp,
+          plot_wind_speed,
+          plot_ghi_dens,
+          plot_ghi_box,
+          ncol = 2, nrow = 3)
+          
+
+
+```
+
+### Međusobni odnosi obeležja
+```{r Values relationship diagrams, echo = F, fig.width=15, fig.height=15}
+
+# Racunanje se radi za fiksan datum koji je u sred leta, grupise se po x promenljivoj i uzima se srednja vrednost 
+# U suprotnom radile bi se grupacija za svaku koordinatu i za svaki vremenski trenutak sto bi preopteretilo grafik i obesmislilo proracun (scatter plot izgleda kao velik pravougaonik)
+
+# Elevation
+mean_air_temp <- df %>%
+  filter(time >= as.POSIXct("2016-08-06 00:00:00") & time < as.POSIXct("2016-08-07 00:00:00")) %>% 
+  group_by(elevation) %>% 
+  summarise(mean_temp = mean(air_temp))
+  
+
+plot_air_temp_elev <- ggplot(mean_air_temp, aes(x = elevation, y = mean_temp)) +
+  geom_point(aes(color = mean_temp)) +
+  labs(title = "Air Temperature over Elevation ",
+       x = "Elevation",
+       y = "Air Temperature",
+       color = "Air temperature") +
+  theme_bw() 
+
+mean_wind_speed <- df %>%
+  filter(time >= as.POSIXct("2016-08-06 00:00:00") & time < as.POSIXct("2016-08-07 00:00:00")) %>% 
+  group_by(elevation) %>% 
+  summarise(mean_wind_speed = mean(wind_speed))
+  
+
+plot_wind_speed_elev <- ggplot(mean_wind_speed, aes(x = elevation, y = mean_wind_speed)) +
+  geom_point(aes(color = mean_wind_speed)) +
+  labs(title = "Wind speed over Elevation ",
+       x = "Elevation",
+       y = "Wind Speed",
+       color = "Wind speed") +
+  theme_bw() 
+
+
+mean_ghi <- df %>%
+  filter(time >= as.POSIXct("2016-08-06 00:00:00") & time < as.POSIXct("2016-08-07 00:00:00")) %>% 
+  group_by(elevation) %>% 
+  summarise(mean_ghi = mean(ghi))
+  
+
+plot_ghi_elev <- ggplot(mean_ghi, aes(x = elevation, y = mean_ghi)) +
+  geom_point(aes(color = mean_ghi)) +
+  labs(title = "GHI over Elevation",
+       x = "Elevation",
+       y = "GHI",
+       color = "GHI") +
+  theme_bw() 
+
+
+# Wind speed
+
+mean_air_temp <- df %>%
+  filter(time >= as.POSIXct("2016-08-06 00:00:00") & time < as.POSIXct("2016-08-07 00:00:00")) %>% 
+  group_by(wind_speed) %>% 
+  summarise(mean_temp = mean(air_temp))
+  
+
+plot_air_temp_wind_speed <- ggplot(mean_air_temp, aes(x = wind_speed, y = mean_temp)) +
+  geom_point(aes(color = mean_temp), size = 2) +
+  labs(title = "Air Temperature over Wind speed ",
+       x = "Wind speed",
+       y = "Air Temperature",
+       color = "Air temperature") +
+  theme_bw() 
+
+
+mean_ghi <- df %>%
+  filter(time >= as.POSIXct("2016-08-06 00:00:00") & time < as.POSIXct("2016-08-07 00:00:00")) %>% 
+  group_by(wind_speed) %>% 
+  summarise(mean_ghi = mean(ghi))
+  
+
+plot_ghi_wind_speed <- ggplot(mean_ghi, aes(x = wind_speed, y = mean_ghi)) +
+  geom_point(aes(color = mean_ghi), size = 2) +
+  labs(title = "GHI over Wind speed ",
+       x = "Wind speed",
+       y = "GHI",
+       color = "GHI") +
+  theme_bw() 
+
+# Air temp
+
+mean_ghi <- df %>%
+  filter(time >= as.POSIXct("2016-08-06 00:00:00") & time < as.POSIXct("2016-08-07 00:00:00")) %>% 
+  group_by(air_temp) %>% 
+  summarise(mean_ghi = mean(ghi))
+  
+
+plot_ghi_air_temp <- ggplot(mean_ghi, aes(x = air_temp, y = mean_ghi)) +
+  geom_line(aes(color = mean_ghi)) +
+  labs(title = "GHI over Air temperature",
+       x = "Air temperature",
+       y = "GHI",
+       color = "GHI") +
+  theme_bw() 
+
+ggarrange(plot_air_temp_elev,
+          plot_wind_speed_elev,
+          plot_ghi_elev,
+          plot_air_temp_wind_speed,
+          plot_ghi_wind_speed,
+          plot_ghi_air_temp,
+          ncol = 2, nrow = 3)
+```
+Sa ovih grafikona može se zaključiti da nadmorska visina nema posebnu povezanost sa bilo kojom preostalom promenljivom dok se mogu uočiti trendovi u odnosima brzine vetra, temperature vazduha i GHI.
+
+
+```{r Clearing unnecessary variables for further classification, include=F}
+to_remove <- setdiff(ls(), c("df", "sc"))
+gc(reset = TRUE)
+rm(list = to_remove)
+rm(to_remove)
+```
+
+
+## Klasifikacija
+
+Klasifikacija je vršena za GHI, gde bi se njegova vrednost klasifikovala kao normalna ili visoka (NORMAL, HIGH), što bi bilo od značaja elektrokompanijama za proaktivan pristup održavanju postrojenja, optimizaciji resursa i raspodeli posla.
+
+### Odabir praga za klasifikaciju i modifikacija polaznog skupa
+
+Kao prag za visoko svetlosno zračenje iako se generalno uzima 600 W/m², na osnovu prethodno iscrtanih grafikona, odabiramo, vrednost trećeg kvartila, kako bi se bolje prilagodili našem konkretnom skupu podataka vezanom za Tajvan.
+
+```{r Introducing GHI classes}
+threshold <- quantile(df$ghi, probs = 0.75)
+threshold
+
+df %<>% 
+  mutate(ghi_c = factor(ifelse(ghi > threshold, "HIGH", "NORMAL")))
+```
+
+
+#### Prvih 10 redova nakon modiifikacije polaznog skupa
+
+```{r Showing first 10 rows after modification, echo = F}
+  
+knitr::kable(head(df, n = 10),
+             col.names = c("id",
+                           "time",
+                           "latitude[°]",
+                           "longitude[°]",
+                           "elevation[m]",
+                           "air_temp[°C]",
+                           "wind_speed[m/s]",
+                           "ghi[W/m²]",
+                           "ghi categorical"),
+             label = "Tabelarni prikaz modifikovanog skupa podataka",
+             format = "html",
+             ) %>%
+  kableExtra::kable_styling(bootstrap_options = "bordered", full_width = F, font_size = 16)
+  
+```
+### Priprema skupa podataka za visestruku validaciju
+
+```{r k-fold cross validation preparations}
+
+k_folds <- 5
+
+# Promesamo podatke 
+df_shuffled <- df[sample(nrow(df)), ]
+df_shuffled %<>% 
+  mutate(id = 1:nrow(df)) # radi laseg samplovanja
+# Prebacimo u tbl_spark zbog dalje obrade
+df_spark <- copy_to(sc, df_shuffled, "df_spark", overwrite = TRUE)
+
+df_spark %<>%
+  mutate(time_numeric = as.numeric(time))
+  
+formula <- ghi_c ~ air_temp + wind_speed + longitude + latitude + time_numeric
+```
+
+
+### Logistička regresija
+
+Podešavani hiperparametri:
+
+* **reg_parameter - regularizacioni parametar (lambda)**
+    * poznat i kao kazneni član, pomaže u sprečavanju pretreniranja dodavanjem kazne za veće koeficijente.
+        * 0 - bez regularizacije
+        * 0.001 - mala kolicina regularizacije
+        * 0.1 - umerena regularizacija
+* **max_iterations - maksimalni broj iteracija algoritma**
+    * 100 - podrazumevan broj
+    * 500 - povećan broj iteracija
+    * 1000 - velik broj iteracija
+
+```{r Logistic regression, eval= F}
+
+partitions <- sdf_random_split(df_spark, seed=1, training=0.8, test=0.2)
+
+reg_parameter <- c(0, 0.001, 0.1)
+max_iterations <- c(100, 500, 1000)
+
+accuracy <- numeric(3)
+precision <- numeric(3)
+recall <- numeric(3)
+f_measure <- numeric(3)
+
+for(i in 1:length(reg_parameter)){
+  logreg <- ml_logistic_regression(partitions$training,
+                                   formula,
+                                   reg_param = reg_parameter[i],
+                                   max_iter = max_iterations[i],
+                                   family = "binomial")
+  
+  evaluation <- ml_evaluate(logreg, dataset=partitions$test)
+  
+  accuracy[i] <- evaluation$accuracy()
+  precision[i] <- evaluation$weighted_precision()
+  recall[i] <- evaluation$weighted_recall()
+  f_measure[i] <- evaluation$weighted_f_measure()
+}
+
+logreg_results <- data.frame(accuracy, precision, recall, f_measure)
+rownames(logreg_results) <- c("scenario 1", "scenario 2", "scenario 3")
+colnames(logreg_results) <- c("Accuracy", "Precision", "Recall", "F measure")
+
+knitr::kable(logreg_results,
+             label = "Tabelarni prikaz deskriptivnih statistika",
+             format = "html"
+) %>%
+  kableExtra::kable_styling(bootstrap_options = "bordered", full_width = FALSE, font_size = 16)
+
+```
 
 
 
-
-
+## Zatvaranje spark konekcije
+```{r Closing spark context}
+spark_disconnect(sc)
+```
