@@ -1,5 +1,5 @@
 ---
-title: Analiza skupa podataka o svetlosnom zračenju u području Tajvana
+title: Analiza skupa podataka o svetlosnom zračenju na području Tajvana
 date: "`r format(Sys.time(), '%d. %B %Y')`"
 author: Aleksandar Stojanović 
 output: html_document
@@ -497,13 +497,14 @@ k_folds <- 5
 df_shuffled <- df[sample(nrow(df)), ]
 df_shuffled %<>% 
   mutate(id = 1:nrow(df)) # radi laseg samplovanja
+
 # Prebacimo u tbl_spark zbog dalje obrade
 df_spark <- copy_to(sc, df_shuffled, "df_spark", overwrite = TRUE)
 
 # ML funkcije ne podrzavaju timestamp, pa se vreme prebacuje u numeric
 df_spark %<>%
   mutate(time_numeric = as.numeric(time))
-  
+
 formula <- ghi_c ~ air_temp + wind_speed + longitude + latitude + time_numeric
 
 # Funkcija za deljenje podataka za k-fold validaciju
@@ -599,8 +600,86 @@ knitr::kable(results,
 
 #### Odnosi hiperparametara i performansi
 
-```{r Logistic regression parameters vs performance}
+```{r Logistic regression parameters vs performance, echo = F, fig.width=10, fig.height=10}
 
+plotting_df <- cbind(results, reg_parameter, max_iterations)
+
+
+
+plot_reg_param_acc <- ggplot(plotting_df) +
+  geom_point(mapping = aes(x = reg_parameter, y = accuracies)) +
+  labs(title = "Accuracy over Regularization parameter",
+       x = "Regularization parameter",
+       y = "Accuracy") +
+  theme_bw() 
+
+
+plot_reg_param_prec <- ggplot(plotting_df) +
+  geom_point(mapping = aes(x = reg_parameter, y = precisions)) +
+  labs(title = "Precision over Regularization parameter",
+       x = "Regularization parameter",
+       y = "Precision") +
+  theme_bw() 
+
+plot_reg_param_rec <- ggplot(plotting_df) +
+  geom_point(mapping = aes(x = reg_parameter, y = recalls)) +
+  labs(title = "Recall over Regularization parameter",
+       x = "Regularization parameter",
+       y = "Recall") +
+  theme_bw() 
+
+plot_reg_param_f <- ggplot(plotting_df) +
+  geom_point(mapping = aes(x = reg_parameter, y = f_measures)) +
+  labs(title = "F measure over Regularization parameter",
+       x = "Regularization parameter",
+       y = "F measure ") +
+  theme_bw() 
+
+
+ggarrange(plot_reg_param_acc,
+          plot_reg_param_prec,
+          plot_reg_param_rec,
+          plot_reg_param_f,
+          ncol = 2, nrow = 2)
+
+
+
+
+plot_max_iter_acc <- ggplot(plotting_df) +
+  geom_point(mapping = aes(x = max_iterations, y = accuracies)) +
+  labs(title = "Accuracy over Max iterations",
+       x = "Max iterations",
+       y = "Accuracy") +
+  theme_bw() 
+
+
+plot_max_iter_prec <- ggplot(plotting_df) +
+  geom_point(mapping = aes(x = max_iterations, y = precisions)) +
+  labs(title = "Precision over Max iterations",
+       x = "Max iterations",
+       y = "Precision") +
+  theme_bw() 
+
+plot_max_iter_rec <- ggplot(plotting_df) +
+  geom_point(mapping = aes(x = max_iterations, y = recalls)) +
+  labs(title = "Recall over Max iterations",
+       x = "Max iterations",
+       y = "Recall") +
+  theme_bw() 
+
+plot_max_iter_f <- ggplot(plotting_df) +
+  geom_point(mapping = aes(x = max_iterations, y = f_measures)) +
+  labs(title = "F measure over Max iterations",
+       x = "Max iterations",
+       y = "F measure ") +
+  theme_bw() 
+
+
+ggarrange(plot_max_iter_acc,
+          plot_max_iter_prec,
+          plot_max_iter_rec,
+          plot_max_iter_f,
+          ncol = 2, nrow = 2)
 ```
 
 
