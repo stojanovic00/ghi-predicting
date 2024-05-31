@@ -497,7 +497,7 @@ k_folds <- 5
 df_shuffled <- df[sample(nrow(df)), ]
 df_shuffled %<>% 
   mutate(id = 1:nrow(df)) # radi laseg samplovanja
-
+  
 # Prebacimo u tbl_spark zbog dalje obrade
 df_spark <- copy_to(sc, df_shuffled, "df_spark", overwrite = TRUE)
 
@@ -506,6 +506,7 @@ df_spark %<>%
   mutate(time_numeric = as.numeric(time))
 
 formula <- ghi_c ~ air_temp + wind_speed + longitude + latitude + time_numeric
+
 
 # Funkcija za deljenje podataka za k-fold validaciju
 split_data <- function(data, fold_num, fold_size) {
@@ -683,6 +684,99 @@ ggarrange(plot_max_iter_acc,
 ```
 
 
+### Random forest
+
+
+```{r Random forest}
+start_time <- proc.time()
+#### Obucanvanje i validacija
+num_trees <- c(50, 100, 200)
+max_depth <- c(5, 10, 15)
+
+accuracies <- numeric(3)
+
+for(scenario in 1:3){
+  accuracy_sum <- 0
+  
+  for(i in 1:k_folds){
+    paritioned_data <- split_data(df_spark, i, fold_size)
+    
+    rf <- ml_random_forest(paritioned_data$train_set,
+                                  formula,
+                                  num_trees = num_trees[scenario],
+                                  max_depth = max_depth[scenario]
+    )
+    
+    evaluation <- ml_evaluate(rf, dataset=paritioned_data$test_set)
+    
+    accuracy_sum <- accuracy_sum + evaluation$Accuracy
+  }
+  
+  accuracies[scenario] <- accuracy_sum / k_folds
+}
+
+# Prikaz rezultata
+results <- data.frame(accuracies)
+# 
+rownames(results) <- c("Scenario 1", "Scenario 2", "Scenario 3")
+colnames(results) <- c("Accuracy")
+# 
+knitr::kable(results,
+             label = "Prikaz rezultata Random forest",
+             format = "html"
+) %>%
+  kableExtra::kable_styling(bootstrap_options = "bordered", full_width = FALSE, font_size = 16)
+end_time <- proc.time()
+elapsed = end_time-start_time
+elapsed[3] / 60
+```
+
+
+### Gradient boost
+
+```{r Gradient Boost}
+start_time <- proc.time()
+#### Obucanvanje i validacija
+max_depth <- c(3, 5 , 10)
+step_size <- c(0.05, 0.1, 0.3)
+
+accuracies <- numeric(3)
+
+for(scenario in 1:3){
+  accuracy_sum <- 0
+
+  for(i in 1:k_folds){
+    paritioned_data <- split_data(df_spark, i, fold_size)
+    
+    rf <- ml_gbt_classifier(paritioned_data$train_set,
+                                  formula,
+                                  max_depth = max_depth[scenario],
+                                  step_size = step_size[scenario]
+    )
+    
+    evaluation <- ml_evaluate(rf, dataset=paritioned_data$test_set)
+    
+    accuracy_sum <- accuracy_sum + evaluation$Accuracy
+  }
+  
+  accuracies[scenario] <- accuracy_sum / k_folds
+}
+
+# Prikaz rezultata
+results <- data.frame(accuracies)
+# 
+rownames(results) <- c("Scenario 1", "Scenario 2", "Scenario 3")
+colnames(results) <- c("Accuracy")
+# 
+knitr::kable(results,
+             label = "Prikaz rezultata Gradient boost",
+             format = "html"
+) %>%
+  kableExtra::kable_styling(bootstrap_options = "bordered", full_width = FALSE, font_size = 16)
+end_time <- proc.time()
+elapsed = end_time-start_time
+elapsed[3] / 60
+```
 
 ## Zatvaranje spark konekcije
 ```{r Closing spark context}
