@@ -5,6 +5,10 @@ author: Aleksandar Stojanović
 output: html_document
 ---
 
+```{r setup, include = FALSE}
+# knitr::opts_chunk$set(eval = FALSE)
+```
+
 # Uvod
 
 
@@ -545,7 +549,8 @@ Podešavani hiperparametri:
     * 1000 - velik broj iteracija
 
 ```{r Logistic regression}
-#### Obucanvanje i validacija
+start_time <- proc.time()
+
 reg_parameter <- c(0, 0.001, 0.1)
 max_iterations <- c(100, 500, 1000)
 
@@ -584,26 +589,29 @@ for(scenario in 1:3){
 }
 
 # Prikaz rezultata
-results <- data.frame(accuracies,
+results_logreg <- data.frame(accuracies,
                       precisions,
                       recalls,
                       f_measures)
 
-rownames(results) <- c("Scenario 1", "Scenario 2", "Scenario 3")
-colnames(results) <- c("Accuracy", "Precision", "Recall", "F Measure")
+rownames(results_logreg) <- c("Scenario 1", "Scenario 2", "Scenario 3")
+colnames(results_logreg) <- c("Accuracy", "Precision", "Recall", "F Measure")
 
-knitr::kable(results,
+knitr::kable(results_logreg,
              label = "Prikaz rezultata logisticke regresije",
              format = "html"
 ) %>%
   kableExtra::kable_styling(bootstrap_options = "bordered", full_width = FALSE, font_size = 16)
+end_time <- proc.time()
+elapsed = end_time-start_time
+print(paste("Elapsed time:",round(elapsed[3] / 60,2)))
 ```
 
 #### Odnosi hiperparametara i performansi
 
 ```{r Logistic regression parameters vs performance, echo = F, fig.width=10, fig.height=10}
 
-plotting_df <- cbind(results, reg_parameter, max_iterations)
+plotting_df <- cbind(results_logreg, reg_parameter, max_iterations)
 
 
 
@@ -684,77 +692,103 @@ ggarrange(plot_max_iter_acc,
 ```
 
 
-### Random forest
+### Linear SVC
+
+Podešavani hiperparametri:
+
+* **reg_parameter - regularizacioni parametar (lambda)**
+    * poznat i kao kazneni član, pomaže u sprečavanju pretreniranja dodavanjem kazne za veće koeficijente.
+        * 0 - bez regularizacije
+        * 0.001 - mala kolicina regularizacije
+        * 0.1 - umerena regularizacija
+* **max_iterations - maksimalni broj iteracija algoritma**
+    * 100 - podrazumevan broj
+    * 500 - povećan broj iteracija
+    * 1000 - velik broj iteracija
 
 
-```{r Random forest}
+```{r Linear SVC}
 start_time <- proc.time()
 #### Obucanvanje i validacija
-num_trees <- c(50, 100, 200)
-max_depth <- c(5, 10, 15)
+reg_parameter <- c(0, 0.001, 0.1)
+max_iterations <- c(100, 500, 1000)
 
 accuracies <- numeric(3)
 
 for(scenario in 1:3){
   accuracy_sum <- 0
+  print(paste("USO (scen, iter)", scenario, i))
   
   for(i in 1:k_folds){
     paritioned_data <- split_data(df_spark, i, fold_size)
     
-    rf <- ml_random_forest(paritioned_data$train_set,
-                                  formula,
-                                  num_trees = num_trees[scenario],
-                                  max_depth = max_depth[scenario]
-    )
+    lsvc <- ml_logistic_regression(paritioned_data$train_set,
+                                     formula,
+                                     reg_param = reg_parameter[scenario],
+                                     max_iter = max_iterations[scenario])
     
-    evaluation <- ml_evaluate(rf, dataset=paritioned_data$test_set)
+    evaluation <- ml_evaluate(lsvc, dataset=paritioned_data$test_set)
     
-    accuracy_sum <- accuracy_sum + evaluation$Accuracy
+    accuracy_sum <- accuracy_sum + evaluation$accuracy()
   }
   
   accuracies[scenario] <- accuracy_sum / k_folds
 }
 
 # Prikaz rezultata
-results <- data.frame(accuracies)
-# 
-rownames(results) <- c("Scenario 1", "Scenario 2", "Scenario 3")
-colnames(results) <- c("Accuracy")
-# 
-knitr::kable(results,
-             label = "Prikaz rezultata Random forest",
+results_lsvc <- data.frame(accuracies)
+
+rownames(results_lsvc) <- c("Scenario 1", "Scenario 2", "Scenario 3")
+colnames(results_lsvc) <- c("Accuracy")
+
+knitr::kable(results_lsvc,
+             label = "Prikaz rezultata Linear Support Vector Classifier",
              format = "html"
 ) %>%
   kableExtra::kable_styling(bootstrap_options = "bordered", full_width = FALSE, font_size = 16)
 end_time <- proc.time()
 elapsed = end_time-start_time
-elapsed[3] / 60
+print(paste("Elapsed time:",round(elapsed[3] / 60,2)))
 ```
 
 
-### Gradient boost
+### Decision tree
 
-```{r Gradient Boost}
+* **max_depth - maksimalna dubina stabla**
+    * Određuje maksimalnu dubinu pojedinačnog stabla. Dublje drveće može uhvatiti složenije obrasce u podacima, ali su takođe sklonija preobučavanju.
+        * 5 -  umerena dubina
+        * 10 -  dublje drveće
+        * 20 -  vrlo duboko drveće
+
+* **min_instances_per_node - minimalan broj instanci po čvoru**
+    * Definiše minimalan broj instanci koji se moraju nalaziti u čvoru stabla pre nego što se on može podeliti na dva deteta. Veća vrednost može sprečiti preobučavanje forsiranjem modela da razmotri više podataka prilikom deljenja čvorova.
+    * Vrijednosti za probno podešavanje \- 
+        * 2 -  niska vrednost
+        * 5 -  umerena vrednost
+        * 10 -  visoka vrednost
+
+
+```{r Decision tree}
 start_time <- proc.time()
 #### Obucanvanje i validacija
-max_depth <- c(3, 5 , 10)
-step_size <- c(0.05, 0.1, 0.3)
+max_depth <- c(5,10,20)
+min_instances_per_node <- c(2,5,10)
 
 accuracies <- numeric(3)
 
 for(scenario in 1:3){
   accuracy_sum <- 0
-
   for(i in 1:k_folds){
+    print(paste("USO (scen, iter)", scenario, i))
     paritioned_data <- split_data(df_spark, i, fold_size)
     
-    rf <- ml_gbt_classifier(paritioned_data$train_set,
+    dt <- ml_decision_tree_classifier(paritioned_data$train_set,
                                   formula,
                                   max_depth = max_depth[scenario],
-                                  step_size = step_size[scenario]
+                                  min_instances_per_node = min_instances_per_node[scenario]
     )
     
-    evaluation <- ml_evaluate(rf, dataset=paritioned_data$test_set)
+    evaluation <- ml_evaluate(dt, dataset=paritioned_data$test_set)
     
     accuracy_sum <- accuracy_sum + evaluation$Accuracy
   }
@@ -763,19 +797,19 @@ for(scenario in 1:3){
 }
 
 # Prikaz rezultata
-results <- data.frame(accuracies)
+results_dt <- data.frame(accuracies)
 # 
-rownames(results) <- c("Scenario 1", "Scenario 2", "Scenario 3")
-colnames(results) <- c("Accuracy")
+rownames(results_dt) <- c("Scenario 1", "Scenario 2", "Scenario 3")
+colnames(results_dt) <- c("Accuracy")
 # 
-knitr::kable(results,
-             label = "Prikaz rezultata Gradient boost",
+knitr::kable(results_dt,
+             label = "Prikaz rezultata Descision tree",
              format = "html"
 ) %>%
   kableExtra::kable_styling(bootstrap_options = "bordered", full_width = FALSE, font_size = 16)
 end_time <- proc.time()
 elapsed = end_time-start_time
-elapsed[3] / 60
+print(paste("Elapsed time:",round(elapsed[3] / 60,2)))
 ```
 
 ## Zatvaranje spark konekcije
