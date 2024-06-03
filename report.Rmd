@@ -471,6 +471,8 @@ df %<>%
 ```
 
 
+
+
 #### Prvih 10 redova nakon modiifikacije polaznog skupa
 
 ```{r Showing first 10 rows after modification, echo = F}
@@ -505,7 +507,7 @@ df_shuffled %<>%
 # Prebacimo u tbl_spark zbog dalje obrade
 df_spark <- copy_to(sc, df_shuffled, "df_spark", overwrite = TRUE)
 
-# ML funkcije ne podrzavaju timestamp, pa se vreme prebacuje u numeric
+# ML funkcije ne podrzavaju timestamp, pa se vreme prebacuje u numeric  
 df_spark %<>%
   mutate(time_numeric = as.numeric(time))
 
@@ -810,7 +812,95 @@ knitr::kable(results_dt,
 end_time <- proc.time()
 elapsed = end_time-start_time
 print(paste("Elapsed time:",round(elapsed[3] / 60,2)))
+
+# RADNA ZONA KAMENICA 10
+
+eval <- ml_evaluate(logreg, paritioned_data$test_set)
+evaluated_acc <- eval$accuracy()
+
+pred <- ml_predict(logreg, paritioned_data$test_set)
+confMatrix <- confusionMatrix(factor(pull(paritioned_data$test_set, "ghi_c")), factor(pull(pred, "ghi_c")))
+predicted_acc <- confMatrix$overall[["Accuracy"]]
+
+all(factor(pull(paritioned_data$test_set, "ghi_c")) == factor(pull(pred, "ghi_c")))
+
+evaluated_acc
+predicted_acc
+
 ```
+
+
+## Klasterizacija
+
+### Normalizacija podataka
+```{r Data normalization for clustering}
+df_spark_normalized <- copy_to(sc, df_shuffled, "df_spark_normalized", overwrite = TRUE)
+df_spark_normalized %<>%
+  mutate(time_numeric = as.numeric(time))
+
+
+features <- c("air_temp", "wind_speed", "time_numeric", "longitude", "latitude")
+
+means <- numeric(length(features))
+stds <- numeric(length(features))
+
+names(means) <- features
+names(stds) <- features
+  
+for(col in features){
+  summary_stats <- df_spark_normalized %>%
+    summarise(
+      mean_value = mean(!!sym(col), na.rm = TRUE),
+      std_value = sd(!!sym(col), na.rm = TRUE)
+    ) %>%
+    collect()
+  
+  means[col] <- summary_stats$mean_value
+  stds[col] <- summary_stats$std_value
+}
+
+
+for (col in features) {
+  mean <- means[col]
+  std <- stds[col]
+  
+  df_spark_normalized <- df_spark_normalized %>%
+    mutate(!!sym(col) := (!!sym(col) - mean) / std)
+}
+```
+
+
+```{r KMeans clustering}
+formula_clustering <- ghi_c ~ air_temp + wind_speed + time_numeric + longitude + latitude
+
+sum_of_squared_errors <- numeric(15)
+for(k in 2:15){
+  print(paste("Cluster:", k))
+  clustered <- ml_bisecting_kmeans(df_spark_normalized, formula = formula_clustering, k = k)
+  sum_of_squared_errors[k] <- clustered$cost
+}
+
+
+# Prikaz
+
+k_errors_df <- data.frame(1:15, sum_of_squared_errors)
+colnames(k_errors_df) <- c("K", "sum_of_squared_errors")
+
+
+k_elbow_plot <- ggplot(k_errors_df) +
+  geom_line(mapping = aes(x = K, y = sum_of_squared_errors)) +
+  labs(title = "Sum of squared errors over number of clusters",
+       x = "Number of clusters",
+       y = "Sum of squared errors ") +
+  theme_bw() 
+k_elbow_plot
+
+
+```
+
+
+
+
 
 ## Zatvaranje spark konekcije
 ```{r Closing spark context}
