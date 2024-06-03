@@ -1,3 +1,12 @@
+```{r}
+# - dodati za vreme raspodelu, to ce biti ravna linija na primer za gustinu rapsodele
+# - sta izaberes kao metriku za performanse, samo moras da objasnis zbog cega (zasto je to bitno da se racuna)
+# - prikazivanje odnosa performansi moze da se odradi i preko barplota, pa da se prikaze sve na jednom dijagramu cak
+# - za klasterizciju moze PCA, ili da se samo nadju najdominantnija obelzja pa samo ona da se vizualizuju
+# - sto se tice ispitivanja klastera treba izracunati srednje vrednosti, varijanse itd za svaki klaster
+# - moze box dijagram za vizualizaciju klasterizacije
+```
+
 ---
 title: Analiza skupa podataka o svetlosnom zračenju na području Tajvana
 date: "`r format(Sys.time(), '%d. %B %Y')`"
@@ -6,13 +15,14 @@ output: html_document
 ---
 
 ```{r setup, include = FALSE}
-# knitr::opts_chunk$set(eval = FALSE)
+  #knitr::opts_chunk$set(eval = FALSE)
+x <- 100
 ```
 
 # Uvod
 
 
-Globalno horizontalno zračenje (GHI), ili ukupna količina kratkotalasnog sunčevog zračenja koje dospe na  zemlj inu površinu, predstavlja ključni parametar za solarne elektrane. Ova vrednost, koja obuhvata i direktno i difuzno sunčevo zračenje, trenutno se meri geo-stacionarnim satelitima.
+Globalno horizontalno zračenje (GHI), ili ukupna količina kratkotalasnog sunčevog zračenja koje dospe na  zemljinu površinu, predstavlja ključni parametar za solarne elektrane. Ova vrednost, koja obuhvata i direktno i difuzno sunčevo zračenje, trenutno se meri geo-stacionarnim satelitima.
 
 Predviđanje perioda sa visokim GHI indeksom omogućava solarnim elektranama  proaktivni pristup optimizaciji rada. To se ogleda u:
 
@@ -445,7 +455,6 @@ ggarrange(plot_air_temp_elev,
 ```
 Sa ovih grafikona može se zaključiti da nadmorska visina nema posebnu povezanost sa bilo kojom preostalom promenljivom dok se mogu uočiti trendovi u odnosima brzine vetra, temperature vazduha i GHI.
 
-
 ```{r Clearing unnecessary variables for further classification, include=F}
 to_remove <- setdiff(ls(), c("df", "sc"))
 gc(reset = TRUE)
@@ -529,6 +538,23 @@ split_data <- function(data, fold_num, fold_size) {
   return(list(train_set = train_set, test_set = test_set))
 }
 
+
+# Funkcija za izracunavanje performansi specifikacije
+calc_perf <- function(model, test_set){
+  
+  pred <- ml_predict(model, test_set)
+  confMat <- confusionMatrix(factor(pull(test_set, "ghi_c")), factor(pull(pred, "predicted_label")))
+  confMat
+  
+  accuracy <- confMat$overall[["Accuracy"]]
+  sensitivty <- confMat$byClass[["Sensitivity"]]
+  specificity <- confMat$byClass[["Specificity"]]
+  
+  
+  return(list(accuracy = accuracy, sensitivty = sensitivty,
+              specificity = specificity))
+}
+
 # Opste potrebni podaci za visestruku validaciju
 row_num <- count(df_spark) %>% collect()
 row_num <- row_num[[1,1]]
@@ -557,15 +583,13 @@ reg_parameter <- c(0, 0.001, 0.1)
 max_iterations <- c(100, 500, 1000)
 
 accuracies <- numeric(3)
-precisions <- numeric(3)
-recalls <- numeric(3)
-f_measures <- numeric(3)
+sensitivities <- numeric(3)
+specificities <- numeric(3)
 
 for(scenario in 1:3){
   accuracy_sum <- 0
-  precision_sum <- 0
-  recall_sum <- 0
-  f_measure_sum <- 0
+  sensitivity_sum <- 0
+  specificity_sum <- 0
   
   for(i in 1:k_folds){
     paritioned_data <- split_data(df_spark, i, fold_size)
@@ -576,28 +600,25 @@ for(scenario in 1:3){
                                      max_iter = max_iterations[scenario],
                                      family = "binomial")
     
-    evaluation <- ml_evaluate(logreg, dataset=paritioned_data$test_set)
+    performance <- calc_perf(logreg, paritioned_data$test_set)
     
-    accuracy_sum <- accuracy_sum + evaluation$accuracy()
-    precision_sum <- precision_sum + evaluation$weighted_precision()
-    recall_sum <- recall_sum + evaluation$weighted_recall()
-    f_measure_sum <- f_measure_sum + evaluation$weighted_f_measure()
+    accuracy_sum <- accuracy_sum + performance[["accuracy"]]
+    sensitivity_sum <- sensitivity_sum + performance[["sensitivty"]]
+    specificity_sum <- specificity_sum + performance[["specificity"]]
   }
   
   accuracies[scenario] <- accuracy_sum / k_folds
-  precisions[scenario] <- precision_sum / k_folds
-  recalls[scenario] <- recall_sum / k_folds
-  f_measures[scenario] <- f_measure_sum / k_folds
+  sensitivities[scenario] <- sensitivity_sum / k_folds
+  specificities[scenario] <- specificity_sum / k_folds
 }
 
 # Prikaz rezultata
 results_logreg <- data.frame(accuracies,
-                      precisions,
-                      recalls,
-                      f_measures)
+                      sensitivities,
+                      specificities)
 
 rownames(results_logreg) <- c("Scenario 1", "Scenario 2", "Scenario 3")
-colnames(results_logreg) <- c("Accuracy", "Precision", "Recall", "F Measure")
+colnames(results_logreg) <- c("Accuracy", "Sensitivity", "Specificity")
 
 knitr::kable(results_logreg,
              label = "Prikaz rezultata logisticke regresije",
@@ -609,12 +630,12 @@ elapsed = end_time-start_time
 print(paste("Elapsed time:",round(elapsed[3] / 60,2)))
 ```
 
+Na osnovu rezultata da se zaključiti da parametri u 3. scenariju postižu najbolje performanse
 #### Odnosi hiperparametara i performansi
 
 ```{r Logistic regression parameters vs performance, echo = F, fig.width=10, fig.height=10}
 
 plotting_df <- cbind(results_logreg, reg_parameter, max_iterations)
-
 
 
 plot_reg_param_acc <- ggplot(plotting_df) +
@@ -625,32 +646,24 @@ plot_reg_param_acc <- ggplot(plotting_df) +
   theme_bw() 
 
 
-plot_reg_param_prec <- ggplot(plotting_df) +
-  geom_point(mapping = aes(x = reg_parameter, y = precisions)) +
-  labs(title = "Precision over Regularization parameter",
+plot_reg_param_sens <- ggplot(plotting_df) +
+  geom_point(mapping = aes(x = reg_parameter, y = sensitivities)) +
+  labs(title = "Sensitivity over Regularization parameter",
        x = "Regularization parameter",
-       y = "Precision") +
+       y = "Sensitivity") +
   theme_bw() 
 
-plot_reg_param_rec <- ggplot(plotting_df) +
-  geom_point(mapping = aes(x = reg_parameter, y = recalls)) +
-  labs(title = "Recall over Regularization parameter",
+plot_reg_param_spec <- ggplot(plotting_df) +
+  geom_point(mapping = aes(x = reg_parameter, y = specificities)) +
+  labs(title = "Specificity over Regularization parameter",
        x = "Regularization parameter",
-       y = "Recall") +
-  theme_bw() 
-
-plot_reg_param_f <- ggplot(plotting_df) +
-  geom_point(mapping = aes(x = reg_parameter, y = f_measures)) +
-  labs(title = "F measure over Regularization parameter",
-       x = "Regularization parameter",
-       y = "F measure ") +
+       y = "Specificity") +
   theme_bw() 
 
 
 ggarrange(plot_reg_param_acc,
-          plot_reg_param_prec,
-          plot_reg_param_rec,
-          plot_reg_param_f,
+          plot_reg_param_sens,
+          plot_reg_param_spec,
           ncol = 2, nrow = 2)
 
 
@@ -664,33 +677,26 @@ plot_max_iter_acc <- ggplot(plotting_df) +
   theme_bw() 
 
 
-plot_max_iter_prec <- ggplot(plotting_df) +
-  geom_point(mapping = aes(x = max_iterations, y = precisions)) +
-  labs(title = "Precision over Max iterations",
+plot_max_iter_sens <- ggplot(plotting_df) +
+  geom_point(mapping = aes(x = max_iterations, y = sensitivities)) +
+  labs(title = "Sensitivity over Max iterations",
        x = "Max iterations",
-       y = "Precision") +
+       y = "Sensitivity") +
   theme_bw() 
 
-plot_max_iter_rec <- ggplot(plotting_df) +
-  geom_point(mapping = aes(x = max_iterations, y = recalls)) +
-  labs(title = "Recall over Max iterations",
+plot_max_iter_spec <- ggplot(plotting_df) +
+  geom_point(mapping = aes(x = max_iterations, y = specificities)) +
+  labs(title = "Specificity over Max iterations",
        x = "Max iterations",
-       y = "Recall") +
-  theme_bw() 
-
-plot_max_iter_f <- ggplot(plotting_df) +
-  geom_point(mapping = aes(x = max_iterations, y = f_measures)) +
-  labs(title = "F measure over Max iterations",
-       x = "Max iterations",
-       y = "F measure ") +
+       y = "Specificity") +
   theme_bw() 
 
 
 ggarrange(plot_max_iter_acc,
-          plot_max_iter_prec,
-          plot_max_iter_rec,
-          plot_max_iter_f,
+          plot_max_iter_sens,
+          plot_max_iter_spec,
           ncol = 2, nrow = 2)
+
 ```
 
 
@@ -716,10 +722,13 @@ reg_parameter <- c(0, 0.001, 0.1)
 max_iterations <- c(100, 500, 1000)
 
 accuracies <- numeric(3)
+sensitivities <- numeric(3)
+specificities <- numeric(3)
 
 for(scenario in 1:3){
   accuracy_sum <- 0
-  print(paste("USO (scen, iter)", scenario, i))
+  sensitivity_sum <- 0
+  specificity_sum <- 0
   
   for(i in 1:k_folds){
     paritioned_data <- split_data(df_spark, i, fold_size)
@@ -729,22 +738,28 @@ for(scenario in 1:3){
                                      reg_param = reg_parameter[scenario],
                                      max_iter = max_iterations[scenario])
     
-    evaluation <- ml_evaluate(lsvc, dataset=paritioned_data$test_set)
+    performance <- calc_perf(lsvc, paritioned_data$test_set)
     
-    accuracy_sum <- accuracy_sum + evaluation$accuracy()
+    accuracy_sum <- accuracy_sum + performance[["accuracy"]]
+    sensitivity_sum <- sensitivity_sum + performance[["sensitivty"]]
+    specificity_sum <- specificity_sum + performance[["specificity"]]
   }
   
   accuracies[scenario] <- accuracy_sum / k_folds
+  sensitivities[scenario] <- sensitivity_sum / k_folds
+  specificities[scenario] <- specificity_sum / k_folds
 }
 
 # Prikaz rezultata
-results_lsvc <- data.frame(accuracies)
+results_lsvc <- data.frame(accuracies,
+                      sensitivities,
+                      specificities)
 
 rownames(results_lsvc) <- c("Scenario 1", "Scenario 2", "Scenario 3")
-colnames(results_lsvc) <- c("Accuracy")
+colnames(results_lsvc) <- c("Accuracy", "Sensitivity", "Specificity")
 
 knitr::kable(results_lsvc,
-             label = "Prikaz rezultata Linear Support Vector Classifier",
+             label = "Prikaz rezultata lsvc",
              format = "html"
 ) %>%
   kableExtra::kable_styling(bootstrap_options = "bordered", full_width = FALSE, font_size = 16)
@@ -754,7 +769,76 @@ print(paste("Elapsed time:",round(elapsed[3] / 60,2)))
 ```
 
 
-### Decision tree
+Na osnovu rezultata da se zaključiti da parametri u 2. scenariju postižu najbolje performanse.
+
+#### Odnosi hiperparametara i performansi
+
+```{r LSVC parameters vs performance, echo = F, fig.width=10, fig.height=10}
+
+plotting_df <- cbind(results_lsvc, reg_parameter, max_iterations)
+
+
+plot_reg_param_acc <- ggplot(plotting_df) +
+  geom_point(mapping = aes(x = reg_parameter, y = accuracies)) +
+  labs(title = "Accuracy over Regularization parameter",
+       x = "Regularization parameter",
+       y = "Accuracy") +
+  theme_bw() 
+
+
+plot_reg_param_sens <- ggplot(plotting_df) +
+  geom_point(mapping = aes(x = reg_parameter, y = sensitivities)) +
+  labs(title = "Sensitivity over Regularization parameter",
+       x = "Regularization parameter",
+       y = "Sensitivity") +
+  theme_bw() 
+
+plot_reg_param_spec <- ggplot(plotting_df) +
+  geom_point(mapping = aes(x = reg_parameter, y = specificities)) +
+  labs(title = "Specificity over Regularization parameter",
+       x = "Regularization parameter",
+       y = "Specificity") +
+  theme_bw() 
+
+
+ggarrange(plot_reg_param_acc,
+          plot_reg_param_sens,
+          plot_reg_param_spec,
+          ncol = 2, nrow = 2)
+
+
+
+
+plot_max_iter_acc <- ggplot(plotting_df) +
+  geom_point(mapping = aes(x = max_iterations, y = accuracies)) +
+  labs(title = "Accuracy over Max iterations",
+       x = "Max iterations",
+       y = "Accuracy") +
+  theme_bw() 
+
+
+plot_max_iter_sens <- ggplot(plotting_df) +
+  geom_point(mapping = aes(x = max_iterations, y = sensitivities)) +
+  labs(title = "Sensitivity over Max iterations",
+       x = "Max iterations",
+       y = "Sensitivity") +
+  theme_bw() 
+
+plot_max_iter_spec <- ggplot(plotting_df) +
+  geom_point(mapping = aes(x = max_iterations, y = specificities)) +
+  labs(title = "Specificity over Max iterations",
+       x = "Max iterations",
+       y = "Specificity") +
+  theme_bw() 
+
+
+ggarrange(plot_max_iter_acc,
+          plot_max_iter_sens,
+          plot_max_iter_spec,
+          ncol = 2, nrow = 2)
+
+```
+### Stablo odlučivanja
 
 * **max_depth - maksimalna dubina stabla**
     * Određuje maksimalnu dubinu pojedinačnog stabla. Dublje drveće može uhvatiti složenije obrasce u podacima, ali su takođe sklonija preobučavanju.
@@ -777,11 +861,16 @@ max_depth <- c(5,10,20)
 min_instances_per_node <- c(2,5,10)
 
 accuracies <- numeric(3)
+sensitivities <- numeric(3)
+specificities <- numeric(3)
 
 for(scenario in 1:3){
+  
   accuracy_sum <- 0
+  sensitivity_sum <- 0
+  specificity_sum <- 0
+  
   for(i in 1:k_folds){
-    print(paste("USO (scen, iter)", scenario, i))
     paritioned_data <- split_data(df_spark, i, fold_size)
     
     dt <- ml_decision_tree_classifier(paritioned_data$train_set,
@@ -790,43 +879,104 @@ for(scenario in 1:3){
                                   min_instances_per_node = min_instances_per_node[scenario]
     )
     
-    evaluation <- ml_evaluate(dt, dataset=paritioned_data$test_set)
+    performance <- calc_perf(dt, paritioned_data$test_set)
     
-    accuracy_sum <- accuracy_sum + evaluation$Accuracy
+    accuracy_sum <- accuracy_sum + performance[["accuracy"]]
+    sensitivity_sum <- sensitivity_sum + performance[["sensitivty"]]
+    specificity_sum <- specificity_sum + performance[["specificity"]]
   }
   
   accuracies[scenario] <- accuracy_sum / k_folds
+  sensitivities[scenario] <- sensitivity_sum / k_folds
+  specificities[scenario] <- specificity_sum / k_folds
 }
 
 # Prikaz rezultata
-results_dt <- data.frame(accuracies)
-# 
+results_dt <- data.frame(accuracies,
+                      sensitivities,
+                      specificities)
+
 rownames(results_dt) <- c("Scenario 1", "Scenario 2", "Scenario 3")
-colnames(results_dt) <- c("Accuracy")
-# 
+colnames(results_dt) <- c("Accuracy", "Sensitivity", "Specificity")
+
 knitr::kable(results_dt,
-             label = "Prikaz rezultata Descision tree",
+             label = "Prikaz rezultata stabla odlucivanja",
              format = "html"
 ) %>%
   kableExtra::kable_styling(bootstrap_options = "bordered", full_width = FALSE, font_size = 16)
 end_time <- proc.time()
 elapsed = end_time-start_time
 print(paste("Elapsed time:",round(elapsed[3] / 60,2)))
+```
 
-# RADNA ZONA KAMENICA 10
+Na osnovu rezultata da se zaključiti da parametri u 3. scenariju postižu najbolje performanse.
 
-eval <- ml_evaluate(logreg, paritioned_data$test_set)
-evaluated_acc <- eval$accuracy()
+Nakon analize svih rezultata na nivou svih metoda zaključujemo da najbolje performanse postiže 3. scenario metode stabla odlučivanja.
 
-pred <- ml_predict(logreg, paritioned_data$test_set)
-confMatrix <- confusionMatrix(factor(pull(paritioned_data$test_set, "ghi_c")), factor(pull(pred, "ghi_c")))
-predicted_acc <- confMatrix$overall[["Accuracy"]]
 
-all(factor(pull(paritioned_data$test_set, "ghi_c")) == factor(pull(pred, "ghi_c")))
+#### Odnosi hiperparametara i performansi
 
-evaluated_acc
-predicted_acc
+```{r decision tree parameters vs performance, echo = F, fig.width=10, fig.height=10}
 
+plotting_df <- cbind(results_dt, max_depth, min_instances_per_node)
+
+
+plot_max_depth_acc <- ggplot(plotting_df) +
+  geom_point(mapping = aes(x = max_depth, y = accuracies)) +
+  labs(title = "Accuracy over Max depth",
+       x = "Max depth",
+       y = "Accuracy") +
+  theme_bw() 
+
+
+plot_max_depth_sens <- ggplot(plotting_df) +
+  geom_point(mapping = aes(x = max_depth, y = sensitivities)) +
+  labs(title = "Sensitivity over Max depth",
+       x = "Max depth",
+       y = "Sensitivity") +
+  theme_bw() 
+
+plot_max_depth_spec <- ggplot(plotting_df) +
+  geom_point(mapping = aes(x = max_depth, y = specificities)) +
+  labs(title = "Specificity over Max depth",
+       x = "Max depth",
+       y = "Specificity") +
+  theme_bw() 
+
+
+ggarrange(plot_max_depth_acc,
+          plot_max_depth_sens,
+          plot_max_depth_spec,
+          ncol = 2, nrow = 2)
+
+
+plot_min_instances_per_node_acc <- ggplot(plotting_df) +
+  geom_point(mapping = aes(x = min_instances_per_node, y = accuracies)) +
+  labs(title = "Accuracy over Min instances per node",
+       x = "Min instances per node",
+       y = "Accuracy") +
+  theme_bw() 
+
+
+plot_min_instances_per_node_sens <- ggplot(plotting_df) +
+  geom_point(mapping = aes(x = min_instances_per_node, y = sensitivities)) +
+  labs(title = "Sensitivity over Min instances per node",
+       x = "Min instances per node",
+       y = "Sensitivity") +
+  theme_bw() 
+
+plot_min_instances_per_node_spec <- ggplot(plotting_df) +
+  geom_point(mapping = aes(x = min_instances_per_node, y = specificities)) +
+  labs(title = "Specificity over Min instances per node",
+       x = "Min instances per node",
+       y = "Specificity") +
+  theme_bw() 
+
+
+ggarrange(plot_min_instances_per_node_acc,
+          plot_min_instances_per_node_sens,
+          plot_min_instances_per_node_spec,
+          ncol = 2, nrow = 2)
 ```
 
 
@@ -870,12 +1020,14 @@ for (col in features) {
 ```
 
 
-```{r KMeans clustering}
-formula_clustering <- ghi_c ~ air_temp + wind_speed + time_numeric + longitude + latitude
+### Crtanje Elbow plota
+Crtamo elbow plot kako bi odredili najpogodnije k za klasterizaciju
+```{r Elbow plot for KMeans, eval = F}
+start_time <- proc.time()
 
+formula_clustering <- ghi_c ~ air_temp + wind_speed + time_numeric + longitude + latitude
 sum_of_squared_errors <- numeric(15)
 for(k in 2:15){
-  print(paste("Cluster:", k))
   clustered <- ml_bisecting_kmeans(df_spark_normalized, formula = formula_clustering, k = k)
   sum_of_squared_errors[k] <- clustered$cost
 }
@@ -887,19 +1039,75 @@ k_errors_df <- data.frame(1:15, sum_of_squared_errors)
 colnames(k_errors_df) <- c("K", "sum_of_squared_errors")
 
 
+# Create the ggplot object
 k_elbow_plot <- ggplot(k_errors_df) +
   geom_line(mapping = aes(x = K, y = sum_of_squared_errors)) +
   labs(title = "Sum of squared errors over number of clusters",
        x = "Number of clusters",
        y = "Sum of squared errors ") +
-  theme_bw() 
+  theme_bw() +
+  scale_x_continuous(breaks = seq(1, 15, by = 1))  # Set breaks from 1 to 15 with a step of 1
 k_elbow_plot
 
 
+end_time <- proc.time()
+elapsed = end_time-start_time
+print(paste("Elapsed time:",round(elapsed[3] / 60,2)))
+```
+![](dataset/elbow.png)
+
+
+Klasterizacija prema 2 scenarija:
+
+* **k = 6**
+* **k = 12**
+
+  
+Izabran je Bisecting KMeans jer:
+
+* Ne podrazumeva sfericne klastere
+* Nema problema sa zaglavljivanjem u lokalnom optimumu
+  
+```{r Clustering}
+  cluster_k_6 <- ml_bisecting_kmeans(df_spark_normalized, formula = formula_clustering, k = 6)
+  cluster_k_12 <- ml_bisecting_kmeans(df_spark_normalized, formula = formula_clustering, k = 12)
+```
+
+### Ispitivanje strukture dobijenih klastera
+
+```{r Clusters structure examination}
+cluster_k_6
+cluster_k_12
 ```
 
 
+```{r Preparing unormalized table for clustering visualization}
+predicted_clusters_6 <- ml_predict(cluster_k_6, df_spark_normalized)
+predicted_clusters_6 %<>% 
+  select(prediction) %>% 
+  rename("cluster_6" = prediction)
 
+predicted_clusters_12 <- ml_predict(cluster_k_12, df_spark_normalized)
+predicted_clusters_12 %<>% 
+  select(prediction) %>% 
+  rename("cluster_12" = prediction)
+
+
+df_spark <- sdf_bind_cols(df_spark,predicted_clusters_6, predicted_clusters_12)
+```
+
+
+### Vizualizacija odnosa izmedju vrednosti obelezja i pripadnosti klasteru
+
+#### k = 6
+```{r Value vs cluster belonging visualisation 6}
+long_lat_clust_6 <- ggplot(df_spark, aes(x = longitude, y = latitude, color = cluster_6)) +
+  geom_point() +  
+  labs(title = "Scatter Plot with Cluster Colors",
+       x = "Longitude",
+       y = "Latitude")
+long_lat_clust_6
+```
 
 
 ## Zatvaranje spark konekcije
