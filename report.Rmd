@@ -1,5 +1,4 @@
 ```{r}
-# - dodati za vreme raspodelu, to ce biti ravna linija na primer za gustinu rapsodele
 # - sta izaberes kao metriku za performanse, samo moras da objasnis zbog cega (zasto je to bitno da se racuna)
 # - prikazivanje odnosa performansi moze da se odradi i preko barplota, pa da se prikaze sve na jednom dijagramu cak
 # - za klasterizciju moze PCA, ili da se samo nadju najdominantnija obelzja pa samo ona da se vizualizuju
@@ -16,7 +15,6 @@ output: html_document
 
 ```{r setup, include = FALSE}
   #knitr::opts_chunk$set(eval = FALSE)
-x <- 100
 ```
 
 # Uvod
@@ -336,11 +334,27 @@ plot_ghi_box <- ggplot(df) +
     x = "GHI [W/m²]",
   )
 
+plot_time_density <- ggplot(df)+
+  geom_density(
+    mapping = aes(
+      x = time
+    ),
+    colour = "black",
+    fill = "gray",
+  )+
+  labs(
+    title = "Measuring time distribution",
+    x = "Time",
+    y = "Density"
+  )
+
+
 ggarrange(plot_elevation,
           plot_air_temp,
           plot_wind_speed,
           plot_ghi_dens,
           plot_ghi_box,
+          plot_time_density,
           ncol = 2, nrow = 3)
           
 
