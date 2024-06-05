@@ -1,11 +1,3 @@
-```{r Notes}
-# - sta izaberes kao metriku za performanse, samo moras da objasnis zbog cega (zasto je to bitno da se racuna)
-
-# - za klasterizciju moze PCA, ili da se samo nadju najdominantnija obelzja pa samo ona da se vizualizuju
-# - sto se tice ispitivanja klastera treba izracunati srednje vrednosti, varijanse itd za svaki klaster
-# - moze box dijagram za vizualizaciju klasterizacije
-```
-
 ---
 title: Analiza skupa podataka o svetlosnom zračenju na području Tajvana
 date: "`r format(Sys.time(), '%d. %B %Y')`"
@@ -31,8 +23,14 @@ Predviđanje perioda sa visokim GHI indeksom omogućava solarnim elektranama  pr
 
 # Skup podataka
 
-Skup podataka odnosi se na merenje GHI zracenja na podrucju Vijetnama i javno je dostupan na adresi 
+Skup podataka odnosi se na merenje GHI zračenja na podrucju Vijetnama i javno je dostupan na adresi 
 https://data.openei.org/s3_viewer?bucket=nrel-pds-nsrdb&prefix=vietnam%2F, koje je objavila [NREL](https://nsrdb.nrel.gov/) (National Solar Radiation Database) i dostupno je pod licencom Creative Commons Attribution 3.0 United States License.
+
+# Korišćene tehnologije
+
+* R
+* RStudio
+* Apache Spark
 
 # Rad
 
@@ -64,7 +62,7 @@ library(webshot2)
 set.seed(10)
 ```
 
-## Instaliranje i inicijalizacija spark radnog okruzenja
+## Instaliranje i inicijalizacija Spark radnog okruženja
 
 ```{r Installing and setting up spark environment}
 spark_install(version="3.3.2")
@@ -83,9 +81,9 @@ conf$spark.memory.fraction <- 0.9
 sc <- spark_connect(master = "local", version="3.3.2", config = conf)
 ```
 
-## Ucitavanje podataka u izvornom formatu
+## Učitavanje podataka u izvornom formatu
 
-Temperaturu vazduha i brzinu vetra takodje je moguce meriti pomocu satelita
+Temperaturu vazduha i brzinu vetra takođe je moguće meriti pomoću satelita.
 ``` {r Raw file loading}
 h5_file <- H5Fopen("./dataset/vietnam_2016.h5")
 
@@ -110,14 +108,14 @@ save_kable(kable_out, file = "tables/hdf5_structure.png")
 <center>![](tables/hdf5_structure.png)</center>
 
 
-Zakljucujemo da imamo 75361 redova zbog 75361 koordinate koje se posmatraju i svaki red sadrzi onoliko kolona koliko je bilo merenja u razlicitim vremenskim trenucima.
+Zaključujemo da imamo 75361 redova zbog 75361 koordinate koje se posmatraju i svaki red sadrži onoliko kolona koliko je bilo merenja u različitim vremenskim trenucima.
 
 Kolona ima koliko i sati koliko je posmatranje trajalo: 366 * 24 = 8784 
 
 ## Filtriranje podataka i priprema za obradu
 
 Budući da nas zanima klasifikacija zračenja u letnjem periodu filtriramo podatke koji su
-izmereni od 21. juna (172. dan) do 22. septembra (266. dan)
+izmereni od 21. juna (172. dan) do 22. septembra (266. dan).
 
 ```{r Calculating summer days}
 summer_start <- 172 # day number
@@ -152,8 +150,8 @@ coor_num <- length(selected_rows)
 
 
 
-Kada smo zakljucili opseg podataka (selected_rows, sunny_hours) za letnji period u suncem obasjanim intervalima,
-ekstrahujemo podatke iz h5 matrice i pretvaramo ih u tabelarni format pogodan za dalje koriscenje.
+Kada smo zaključili opseg podataka (selected_rows, sunny_hours) za letnji period u suncem obasjanim intervalima,
+ekstrahujemo podatke iz h5 matrice i pretvaramo ih u tabelarni format pogodan za dalje korišćenje.
 ```{r Converting h5 matrix to table representation}
 
 id <- 1:(coor_num * time_measures_per_coor)
@@ -209,7 +207,7 @@ save_kable(kable_out, file = "tables/first_10.png")
 <center>![](tables/first_10.png)</center>
 
 
-### Nasumicnih 10 redova
+### Nasumičnih 10 redova
 
 ```{r Showing random 10 rows, echo = F}
 
@@ -242,7 +240,7 @@ rm(random_rows, df_random)
 
 ### Deskriptivne statistike po pojedinačnim obeležjima
 
-#### Opseg geografske sirine, duzine i vremena merenja
+#### Opseg geografske širine, dužine i vremena merenja
 ```{r Coordinate and time ranges, echo = F}
 ranges <- rbind(
   range(df$latitude),
@@ -267,7 +265,7 @@ save_kable(kable_out, file = "tables/coors_time_range.png")
 <br>
 <center>![Oblast merenja](images/dataset_coor_range.png)</center>
 
-#### Deskriptivne statistike preostalih obelezja
+#### Deskriptivne statistike preostalih obeležja
 
 ```{r Summaries for all the other variables, echo = F}
 summaries <- rbind(summary(df$elevation),
@@ -510,7 +508,7 @@ Klasifikacija je vršena za GHI, gde bi se njegova vrednost klasifikovala kao no
 
 ### Odabir praga za klasifikaciju i modifikacija polaznog skupa
 
-Kao prag za visoko svetlosno zračenje iako se generalno uzima 600 W/m², na osnovu prethodno iscrtanih grafikona, odabiramo, vrednost trećeg kvartila, kako bi se bolje prilagodili našem konkretnom skupu podataka vezanom za Tajvan.
+Kao prag za visoko svetlosno zračenje, iako se generalno uzima 600 W/m², na osnovu prethodno iscrtanih grafikona, odabiramo, vrednost trećeg kvartila, kako bi se bolje prilagodili našem konkretnom skupu podataka vezanom za Tajvan.
 
 ```{r Introducing GHI classes}
 threshold <- quantile(df$ghi, probs = 0.75)
@@ -546,7 +544,7 @@ save_kable(kable_out, file = "tables/first_10_moded.png")
 ```
 <center>![](tables/first_10_moded.png)</center>
 
-### Priprema skupa podataka za visestruku validaciju
+### Priprema skupa podataka za višestruku validaciju
 
 ```{r k-fold cross validation preparations}
 
@@ -605,6 +603,11 @@ row_num <- row_num[[1,1]]
 fold_size <- row_num %/% k_folds
 ```
 
+Kao brojčani pokazatelji performansi za sva 3 modela računati su:
+
+ * **Accuracy** - opšti pokazatelj performansi, govori nam koliko je model generalno dobro obučen.
+ * **Sensitivity** - pokazuje da je model dobar u prediviđanju perioda visokog zračenja. (TP / (TP + FN))
+ * **Specificity** -  pokazuje da je model dobar u izbegavanju lažnih alarma tačnom klasifikacijom perioda normalnog zračenja. (TN / (TN + FP))
 
 ### Logistička regresija
 
@@ -676,9 +679,10 @@ print(paste("Elapsed time:",round(elapsed[3] / 60,2)))
 
 save_kable(kable_out, file = "tables/results_logreg.png") 
 ```
-<center>![](tables/results_logreg.png)</center>
 
-Na osnovu rezultata da se zaključiti da parametri u 3. scenariju postižu najbolje performanse
+
+<center>![](tables/results_logreg.png)</center>
+Scenario 3 (osetljivost 0.6343) je najbolji izbor za solarne centrale. Prioritet je detektovati periode visokog zračenja, čak i uz malo nižu preciznost i više lažnih alarma, radi maksimalne proizvodnje solarne energije.
 
 #### Odnosi hiperparametara i performansi
 
@@ -818,7 +822,7 @@ print(paste("Elapsed time:",round(elapsed[3] / 60,2)))
 save_kable(kable_out, file = "tables/results_lsvc.png") 
 ```
 <center>![](tables/results_lsvc.png)</center>
-
+Scenario 3 (osetljivost 0.6343) je najbolji izbor za solarne centrale. Prioritet je detektovati periode visokog zračenja, čak i uz malo nižu preciznost i više lažnih alarma, radi maksimalne proizvodnje solarne energije.
 
 Na osnovu rezultata da se zaključiti da parametri u 2. scenariju postižu najbolje performanse.
 
@@ -894,14 +898,13 @@ ggsave(filename = "plots/lsvc_plots.png")
 ### Stablo odlučivanja
 
 * **max_depth - maksimalna dubina stabla**
-    * Određuje maksimalnu dubinu pojedinačnog stabla. Dublje drveće može uhvatiti složenije obrasce u podacima, ali su takođe sklonija preobučavanju.
+    * Određuje maksimalnu dubinu pojedinačnog stabla. Dublje drveće može uhvatiti složenije obrasce u podacima
         * 5 -  umerena dubina
         * 10 -  dublje drveće
         * 20 -  vrlo duboko drveće
 
 * **min_instances_per_node - minimalan broj instanci po čvoru**
-    * Definiše minimalan broj instanci koji se moraju nalaziti u čvoru stabla pre nego što se on može podeliti na dva deteta. Veća vrednost može sprečiti preobučavanje forsiranjem modela da razmotri više podataka prilikom deljenja čvorova.
-    * Vrijednosti za probno podešavanje \- 
+    * Minimalni broj instanci koje svako dete mora imati nakon razdvajanja.
         * 2 -  niska vrednost
         * 5 -  umerena vrednost
         * 10 -  visoka vrednost
@@ -1132,7 +1135,7 @@ df_spark_normalized %<>%
   mutate(time_numeric = as.numeric(time))
 
 
-features <- c("air_temp", "wind_speed", "time_numeric", "longitude", "latitude")
+features <- c("air_temp", "wind_speed")
 
 means <- numeric(length(features))
 stds <- numeric(length(features))
@@ -1164,13 +1167,14 @@ for (col in features) {
 
 
 ### Crtanje Elbow plota
-Crtamo elbow plot kako bi odredili najpogodnije k za klasterizaciju
+Crtamo elbow plot kako bi odredili najpogodnije k za klasterizaciju.
 ```{r Elbow plot for KMeans, eval = F}
 start_time <- proc.time()
 
-formula_clustering <- ghi_c ~ air_temp + wind_speed + time_numeric + longitude + latitude
-sum_of_squared_errors <- numeric(15)
-for(k in 2:15){
+formula_clustering <-  ~ air_temp + wind_speed
+sum_of_squared_errors <- numeric(6)
+for(k in 2:6){
+  print(k)
   clustered <- ml_bisecting_kmeans(df_spark_normalized, formula = formula_clustering, k = k)
   sum_of_squared_errors[k] <- clustered$cost
 }
@@ -1178,7 +1182,7 @@ for(k in 2:15){
 
 # Prikaz
 
-k_errors_df <- data.frame(1:15, sum_of_squared_errors)
+k_errors_df <- data.frame(1:6, sum_of_squared_errors)
 colnames(k_errors_df) <- c("K", "sum_of_squared_errors")
 
 
@@ -1189,7 +1193,7 @@ k_elbow_plot <- ggplot(k_errors_df) +
        x = "Number of clusters",
        y = "Sum of squared errors ") +
   theme_bw() +
-  scale_x_continuous(breaks = seq(1, 15, by = 1))  # Set breaks from 1 to 15 with a step of 1
+  scale_x_continuous(breaks = seq(1, 6, by = 1))  # Set breaks from 1 to 6 with a step of 1
 k_elbow_plot
 
 
@@ -1197,61 +1201,236 @@ end_time <- proc.time()
 elapsed = end_time-start_time
 print(paste("Elapsed time:",round(elapsed[3] / 60,2)))
 ```
-![](plots/elbow.png)
+<center>![](plots/elbow_2.png)</center>
 
 
 Klasterizacija prema 2 scenarija:
 
-* **k = 6**
-* **k = 12**
+* **k = 3**
+* **k = 4**
 
   
 Izabran je Bisecting KMeans jer:
 
-* Ne podrazumeva sfericne klastere
-* Nema problema sa zaglavljivanjem u lokalnom optimumu
+* Ne podrazumeva sfericne klastere.
+* Nema problema sa zaglavljivanjem u lokalnom optimumu.
   
 ```{r Clustering}
-  cluster_k_6 <- ml_bisecting_kmeans(df_spark_normalized, formula = formula_clustering, k = 6)
-  cluster_k_12 <- ml_bisecting_kmeans(df_spark_normalized, formula = formula_clustering, k = 12)
+  cluster_k_3 <- ml_bisecting_kmeans(df_spark_normalized, formula = formula_clustering, k = 3)
+  cluster_k_4 <- ml_bisecting_kmeans(df_spark_normalized, formula = formula_clustering, k = 4)
 ```
 
 ### Ispitivanje strukture dobijenih klastera
 
-```{r Clusters structure examination}
-cluster_k_6
-cluster_k_12
+```{r k 3 Clusters structure examination, echo=F}
+df_centers_denormalized_3 <- cluster_k_3$centers %>% 
+  mutate(air_temp = (air_temp * stds["air_temp"]) + means["air_temp"]) %>% 
+  mutate(wind_speed = (wind_speed * stds["wind_speed"]) + means["wind_speed"])
+
+
+kable_out <- knitr::kable(df_centers_denormalized_3,
+             format = "html",
+             ) %>%
+kableExtra::kable_styling(bootstrap_options = "bordered", full_width = F, font_size = 16) 
+
+save_kable(kable_out, file = "tables/cluster_centers_3.png") 
+
+sse_3 <- data.frame(round(cluster_k_3$cost,2))
+names(sse_3) <- c("Sum of squared errors")
+
+kable_out <- knitr::kable(sse_3,
+             format = "html",
+             ) %>%
+kableExtra::kable_styling(bootstrap_options = "bordered", full_width = F, font_size = 16) 
+
+save_kable(kable_out, file = "tables/cluster_cost_3.png") 
 ```
+#### Centroidi, k = 3
+<center>![](tables/cluster_centers_3.png)</center>
+<br>
+
+#### Sum of squared errors, k = 3
+<center>![](tables/cluster_cost_3.png)</center>
+<br>
 
 
+
+```{r k 4 Clusters structure examination, echo= F}
+df_centers_denormalized_4 <- cluster_k_4$centers %>% 
+  mutate(air_temp = (air_temp * stds["air_temp"]) + means["air_temp"]) %>% 
+  mutate(wind_speed = (wind_speed * stds["wind_speed"]) + means["wind_speed"])
+
+kable_out <- knitr::kable(df_centers_denormalized_4,
+             format = "html",
+             ) %>%
+kableExtra::kable_styling(bootstrap_options = "bordered", full_width = F, font_size = 16) 
+
+save_kable(kable_out, file = "tables/cluster_centers_4.png") 
+
+sse_4 <- data.frame(round(cluster_k_4$cost,2))
+names(sse_4) <- c("Sum of squared errors")
+
+kable_out <- knitr::kable(sse_4,
+             format = "html",
+             ) %>%
+kableExtra::kable_styling(bootstrap_options = "bordered", full_width = F, font_size = 16) 
+
+save_kable(kable_out, file = "tables/cluster_cost_4.png") 
+```
+#### Centroidi, k = 4
+<center>![](tables/cluster_centers_4.png)</center>
+<br>
+
+#### Sum of squared errors, k = 4
+<center>![](tables/cluster_cost_4.png)</center>
+<br>
+
+
+
+
+
+
+Povezujemo klase sa nenormalizovanom tabelom
 ```{r Preparing unnormalized table for clustering visualization}
-predicted_clusters_6 <- ml_predict(cluster_k_6, df_spark_normalized)
-predicted_clusters_6 %<>% 
+
+predicted_clusters_3 <- ml_predict(cluster_k_3, df_spark_normalized)
+predicted_clusters_3 %<>% 
   select(prediction) %>% 
-  rename("cluster_6" = prediction)
+  rename("cluster_3" = prediction)
 
-predicted_clusters_12 <- ml_predict(cluster_k_12, df_spark_normalized)
-predicted_clusters_12 %<>% 
+predicted_clusters_4 <- ml_predict(cluster_k_4, df_spark_normalized)
+predicted_clusters_4 %<>% 
   select(prediction) %>% 
-  rename("cluster_12" = prediction)
+  rename("cluster_4" = prediction)
 
+df_spark <- sdf_bind_cols(df_spark,predicted_clusters_3, predicted_clusters_4)
+```
 
-df_spark <- sdf_bind_cols(df_spark,predicted_clusters_6, predicted_clusters_12)
-df_spark
+```{r Storing it locally because of R studio crashing like crazy, include= F, echo= F, eval= F}
+#df_spark_local <- collect(df_spark)
+df_spark <- copy_to(sc, df_spark_local, "df_spark", overwrite = TRUE)
 ```
 
 
-### Vizualizacija odnosa izmedju vrednosti obelezja i pripadnosti klasteru
+#### k = 3
+```{r Cluster structures k 3, echo=F}
+features <- c("air_temp", "wind_speed")
 
-#### k = 6
-```{r Value vs cluster belonging visualisation 6}
-long_lat_clust_6 <- ggplot(df_spark, aes(x = longitude, y = latitude, color = cluster_6)) +
-  geom_point() +  
-  labs(title = "Scatter Plot with Cluster Colors",
-       x = "Longitude",
-       y = "Latitude")
-long_lat_clust_6
+summary_df_3 <- df_spark %>% 
+  group_by(cluster_3) %>% 
+  summarize(
+    count = count(),
+    across(
+      features,
+      list(
+        min = ~ min(.),
+        max = ~ max(.),
+        mean = ~ mean(.),
+        median = ~ median(.),
+        sd = ~ sd(.)
+      ),
+      .names = "{col}_{fn}"
+    )
+  ) %>% 
+arrange(cluster_3) %>% 
+  collect() %>% 
+  rename(cluster = cluster_3)
+
+
+summary_df_3_trans <-  t(summary_df_3)
+summary_df_3_trans[, ] <- prettyNum(round(summary_df_3_trans[, ], digits = 4)) 
+
+kable_out <- knitr::kable(summary_df_3_trans,
+             format = "html",
+             ) %>%
+kableExtra::kable_styling(bootstrap_options = "bordered", full_width = F, font_size = 16) 
+
+save_kable(kable_out, file = "tables/cluster_stat_3.png") 
 ```
+<center>![](tables/cluster_stat_3.png)</center>
+
+
+#### k = 4
+```{r Cluster structures k 4, echo=F}
+features <- c("air_temp", "wind_speed")
+
+summary_df_4 <- df_spark %>% 
+  group_by(cluster_4) %>% 
+  summarize(
+    count = count(),
+    across(
+      features,
+      list(
+        min = ~ min(.),
+        max = ~ max(.),
+        mean = ~ mean(.),
+        median = ~ median(.),
+        sd = ~ sd(.)
+      ),
+      .names = "{col}_{fn}"
+    )
+  ) %>% 
+arrange(cluster_4) %>% 
+  collect() %>% 
+  rename(cluster = cluster_4)
+
+
+summary_df_4_trans <-  t(summary_df_4)
+summary_df_4_trans[, ] <- prettyNum(round(summary_df_4_trans[, ], digits = 4)) 
+
+kable_out <- knitr::kable(summary_df_4_trans,
+             format = "html",
+             ) %>%
+kableExtra::kable_styling(bootstrap_options = "bordered", full_width = F, font_size = 16) 
+
+save_kable(kable_out, file = "tables/cluster_stat_4.png") 
+```
+<center>![](tables/cluster_stat_4.png)</center>
+
+
+### Vizualizovanje vrednosti obeležja i pripadnosti klasteru
+
+
+```{r Visualisation clustering, echo = F }
+
+cluster_3_plot <- ggplot(df_spark) +
+  geom_point(aes(x = air_temp,
+                 y = wind_speed,
+                 color = factor(cluster_3))) +
+  geom_point(data = df_centers_denormalized_3,
+             aes(x = air_temp, y = wind_speed),
+             shape = 8,
+             size = 5,
+             color = "black") + 
+  labs(title = "Clustering for k = 3",
+       x = "Air Temperature",
+       y = "Wind Speed",
+       color = "Cluster")
+
+cluster_4_plot <- ggplot(df_spark) +
+  geom_point(aes(x = air_temp,
+                 y = wind_speed,
+                 color = factor(cluster_4))) +
+  geom_point(data = df_centers_denormalized_4,
+             aes(x = air_temp, y = wind_speed),
+             shape = 8,
+             size = 5,
+             color = "black") + 
+  labs(title = "Clustering for k = 4",
+       x = "Air Temperature",
+       y = "Wind Speed",
+       color = "Cluster")
+
+
+
+cluster_3_plot
+ggsave(filename = "plots/clsuters_visualize_3.png")
+cluster_4_plot
+ggsave(filename = "plots/clsuters_visualize_4.png")
+```
+<center>![](plots/clsuters_visualize_3.png)</center>
+<center>![](plots/clsuters_visualize_4.png)</center>
+
 
 
 
