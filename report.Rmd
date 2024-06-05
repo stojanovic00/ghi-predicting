@@ -1,6 +1,6 @@
-```{r}
+```{r Notes}
 # - sta izaberes kao metriku za performanse, samo moras da objasnis zbog cega (zasto je to bitno da se racuna)
-# - prikazivanje odnosa performansi moze da se odradi i preko barplota, pa da se prikaze sve na jednom dijagramu cak
+
 # - za klasterizciju moze PCA, ili da se samo nadju najdominantnija obelzja pa samo ona da se vizualizuju
 # - sto se tice ispitivanja klastera treba izracunati srednje vrednosti, varijanse itd za svaki klaster
 # - moze box dijagram za vizualizaciju klasterizacije
@@ -14,7 +14,7 @@ output: html_document
 ---
 
 ```{r setup, include = FALSE}
-  #knitr::opts_chunk$set(eval = FALSE)
+  knitr::opts_chunk$set(eval = F)
 ```
 
 # Uvod
@@ -45,6 +45,7 @@ install.packages("kableExtra")
 install.packages("ggpubr")
 install.packages("sparklyr")
 install.packages("caret")
+install.packages("webshot2")
 ```
 
 
@@ -59,7 +60,7 @@ library(kableExtra)
 library(ggpubr)
 library(sparklyr)
 library(caret)
-# Zbog reproduktibilnosti nasumicnih operacija
+library(webshot2)
 set.seed(10)
 ```
 
@@ -95,8 +96,18 @@ meta <- h5read(h5_file, "/meta") # elevation: m
 time_index <- h5read(h5_file, "/time_index") # date
 wind_speed <- h5read(h5_file, "/wind_speed") # m/s
 
-h5_file
+
+
+
+kable_out <- knitr::kable(h5ls(h5_file) %>% 
+             select(name,dclass,dim),
+             format = "html",
+             ) %>%
+kableExtra::kable_styling(bootstrap_options = "bordered", full_width = F, font_size = 16) 
+
+save_kable(kable_out, file = "tables/hdf5_structure.png") 
 ```
+<center>![](tables/hdf5_structure.png)</center>
 
 
 Zakljucujemo da imamo 75361 redova zbog 75361 koordinate koje se posmatraju i svaki red sadrzi onoliko kolona koliko je bilo merenja u razlicitim vremenskim trenucima.
@@ -179,7 +190,7 @@ rm(coor_num, coordinate_step, selected_rows, summer_end, summer_hours, summer_st
 ### Prvih 10 redova
 
 ``` {r Showing first 10 rows, echo = F}
-knitr::kable(head(df, n=10),
+kable_out <- knitr::kable(head(df, n=10),
              col.names = c("id",
                            "time",
                            "latitude[°]",
@@ -191,8 +202,11 @@ knitr::kable(head(df, n=10),
              label = "Tabelarni prikaz prečišćenih podataka",
              format = "html",
              ) %>%
-  kableExtra::kable_styling(bootstrap_options = "bordered", full_width = F, font_size = 16)
+kableExtra::kable_styling(bootstrap_options = "bordered", full_width = F, font_size = 16)
+
+save_kable(kable_out, file = "tables/first_10.png")
 ```
+<center>![](tables/first_10.png)</center>
 
 
 ### Nasumicnih 10 redova
@@ -203,7 +217,7 @@ random_rows <- sample(1:nrow(df), size = 10, replace = FALSE)
 df_random <- df %>% 
   slice(random_rows)
   
-knitr::kable(df_random,
+kable_out <- knitr::kable(df_random,
              col.names = c("id",
                            "time",
                            "latitude[°]",
@@ -215,12 +229,14 @@ knitr::kable(df_random,
              label = "Tabelarni prikaz prečišćenih podataka",
              format = "html",
              ) %>%
-  kableExtra::kable_styling(bootstrap_options = "bordered", full_width = F, font_size = 16)
+kableExtra::kable_styling(bootstrap_options = "bordered", full_width = F, font_size = 16)
+
+save_kable(kable_out, file = "tables/random_10.png")
   
 
 rm(random_rows, df_random)
 ```
-
+<center>![](tables/random_10.png)</center>
 
 ## Preliminarna analiza podataka
 
@@ -237,14 +253,19 @@ ranges <- rbind(
 colnames(ranges) <- c("Min/Start", "Max/End")
 rownames(ranges) <- c("Latitude", "Longitude", "Measurment time")
 
-knitr::kable(format(ranges, scientific  = F),
+kable_out <- knitr::kable(format(ranges, scientific  = F),
              label = "Tabelarni prikaz opsega merenja",
              format = "html"
 ) %>%
-  kableExtra::kable_styling(bootstrap_options = "bordered", full_width = FALSE, font_size = 16)
+kableExtra::kable_styling(bootstrap_options = "bordered", full_width = FALSE, font_size = 16)
+
+save_kable(kable_out, file = "tables/coors_time_range.png")
 ```
 
-![Oblast merenja](dataset/dataset_coor_range.png)
+<center>![](tables/coors_time_range.png)</center>
+
+<br>
+<center>![Oblast merenja](images/dataset_coor_range.png)</center>
 
 #### Deskriptivne statistike preostalih obelezja
 
@@ -256,12 +277,15 @@ summaries <- rbind(summary(df$elevation),
 
 rownames(summaries) = c("Elevation[m]", "Air Temperature[°C]", "Wind Speed[m/s]", "GHI[W/m²]")
 
-knitr::kable(summaries,
+kable_out <- knitr::kable(summaries,
              label = "Tabelarni prikaz deskriptivnih statistika",
              format = "html"
 ) %>%
-  kableExtra::kable_styling(bootstrap_options = "bordered", full_width = FALSE, font_size = 16)
+kableExtra::kable_styling(bootstrap_options = "bordered", full_width = FALSE, font_size = 16)
+
+save_kable(kable_out, file = "tables/summaries.png")
 ```
+<center>![](tables/summaries.png)</center>
 
 
 
@@ -357,9 +381,9 @@ ggarrange(plot_elevation,
           plot_time_density,
           ncol = 2, nrow = 3)
           
-
-
+ggsave(filename = "plots/distributions.png")
 ```
+<center>![](plots/distributions.png)</center>
 
 ### Međusobni odnosi obeležja
 ```{r Values relationship diagrams, echo = F, fig.width=15, fig.height=15}
@@ -466,7 +490,10 @@ ggarrange(plot_air_temp_elev,
           plot_ghi_wind_speed,
           plot_ghi_air_temp,
           ncol = 2, nrow = 3)
+ggsave(filename = "plots/relationships.png")
 ```
+<center>![](plots/relationships.png)</center>
+
 Sa ovih grafikona može se zaključiti da nadmorska visina nema posebnu povezanost sa bilo kojom preostalom promenljivom dok se mogu uočiti trendovi u odnosima brzine vetra, temperature vazduha i GHI.
 
 ```{r Clearing unnecessary variables for further classification, include=F}
@@ -500,7 +527,7 @@ df %<>%
 
 ```{r Showing first 10 rows after modification, echo = F}
   
-knitr::kable(head(df, n = 10),
+kable_out <- knitr::kable(head(df, n = 10),
              col.names = c("id",
                            "time",
                            "latitude[°]",
@@ -515,7 +542,10 @@ knitr::kable(head(df, n = 10),
              ) %>%
   kableExtra::kable_styling(bootstrap_options = "bordered", full_width = F, font_size = 16)
   
+save_kable(kable_out, file = "tables/first_10_moded.png") 
 ```
+<center>![](tables/first_10_moded.png)</center>
+
 ### Priprema skupa podataka za visestruku validaciju
 
 ```{r k-fold cross validation preparations}
@@ -634,15 +664,19 @@ results_logreg <- data.frame(accuracies,
 rownames(results_logreg) <- c("Scenario 1", "Scenario 2", "Scenario 3")
 colnames(results_logreg) <- c("Accuracy", "Sensitivity", "Specificity")
 
-knitr::kable(results_logreg,
+kable_out <- knitr::kable(results_logreg,
              label = "Prikaz rezultata logisticke regresije",
              format = "html"
 ) %>%
-  kableExtra::kable_styling(bootstrap_options = "bordered", full_width = FALSE, font_size = 16)
+kableExtra::kable_styling(bootstrap_options = "bordered", full_width = FALSE, font_size = 16)
+
 end_time <- proc.time()
 elapsed = end_time-start_time
 print(paste("Elapsed time:",round(elapsed[3] / 60,2)))
+
+save_kable(kable_out, file = "tables/results_logreg.png") 
 ```
+<center>![](tables/results_logreg.png)</center>
 
 Na osnovu rezultata da se zaključiti da parametri u 3. scenariju postižu najbolje performanse
 
@@ -709,7 +743,9 @@ ggarrange(plot_reg_param_acc,
           plot_max_iter_spec,
           ncol = 2, nrow = 3)
 
+ggsave(filename = "plots/logreg_plots.png")
 ```
+<center>![](plots/logreg_plots.png)</center>
 
 
 ### Linear SVC
@@ -770,7 +806,7 @@ results_lsvc <- data.frame(accuracies,
 rownames(results_lsvc) <- c("Scenario 1", "Scenario 2", "Scenario 3")
 colnames(results_lsvc) <- c("Accuracy", "Sensitivity", "Specificity")
 
-knitr::kable(results_lsvc,
+kable_out <- knitr::kable(results_lsvc,
              label = "Prikaz rezultata lsvc",
              format = "html"
 ) %>%
@@ -778,7 +814,10 @@ knitr::kable(results_lsvc,
 end_time <- proc.time()
 elapsed = end_time-start_time
 print(paste("Elapsed time:",round(elapsed[3] / 60,2)))
+
+save_kable(kable_out, file = "tables/results_lsvc.png") 
 ```
+<center>![](tables/results_lsvc.png)</center>
 
 
 Na osnovu rezultata da se zaključiti da parametri u 2. scenariju postižu najbolje performanse.
@@ -848,7 +887,10 @@ ggarrange(plot_reg_param_acc,
           plot_max_iter_spec,
           ncol = 2, nrow = 3)
 
+ggsave(filename = "plots/lsvc_plots.png")
 ```
+<center>![](plots/lsvc_plots.png)</center>
+
 ### Stablo odlučivanja
 
 * **max_depth - maksimalna dubina stabla**
@@ -910,7 +952,7 @@ results_dt <- data.frame(accuracies,
 rownames(results_dt) <- c("Scenario 1", "Scenario 2", "Scenario 3")
 colnames(results_dt) <- c("Accuracy", "Sensitivity", "Specificity")
 
-knitr::kable(results_dt,
+kable_out <- knitr::kable(results_dt,
              label = "Prikaz rezultata stabla odlucivanja",
              format = "html"
 ) %>%
@@ -918,7 +960,10 @@ knitr::kable(results_dt,
 end_time <- proc.time()
 elapsed = end_time-start_time
 print(paste("Elapsed time:",round(elapsed[3] / 60,2)))
+
+save_kable(kable_out, file = "tables/results_dt.png") 
 ```
+<center>![](tables/results_dt.png)</center>
 
 Na osnovu rezultata da se zaključiti da parametri u 3. scenariju postižu najbolje performanse.
 
@@ -984,7 +1029,10 @@ ggarrange(plot_max_depth_acc,
           plot_min_instances_per_node_sens,
           plot_min_instances_per_node_spec,
           ncol = 2, nrow = 3)
+
+ggsave(filename = "plots/dt_plots.png")
 ```
+<center>![](plots/dt_plots.png)</center>
 
 
 ```{r Calssification global visualisations, fig.height=8, echo = F}
@@ -1015,11 +1063,15 @@ ggplot(results_plotting) +
   scale_y_continuous(
     breaks = seq(round(min(results_plotting$Accuracy),3), max(results_plotting$Accuracy), by = 0.005)
   ) +
+  geom_text(aes(x = param_iters, y = Accuracy, label = round(Accuracy, 3)), 
+            vjust = -0.3, size = 3.5)+
   theme(
-      axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 0.5, size = 12),
-      plot.title = element_text(hjust = 0.5, size = 22),
-      axis.title = element_text(size = 16) 
-    )
+    axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 0.5, size = 12),
+    plot.title = element_text(hjust = 0.5, size = 22),
+    axis.title = element_text(size = 16) 
+  )
+
+ggsave(filename = "plots/global_acc.png")
 
 ggplot(results_plotting) +
   geom_bar(stat = "identity",
@@ -1033,11 +1085,15 @@ ggplot(results_plotting) +
   scale_y_continuous(
     breaks = seq(round(min(results_plotting$Sensitivity),3), max(results_plotting$Sensitivity), by = 0.005)
   ) +
+  geom_text(aes(x = param_iters, y = Sensitivity, label = round(Sensitivity, 3)), 
+            vjust = -0.3, size = 3.5)+
   theme(
-      axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 0.5, size = 12),
-      plot.title = element_text(hjust = 0.5, size = 22),
-      axis.title = element_text(size = 16) 
-    )
+    axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 0.5, size = 12),
+    plot.title = element_text(hjust = 0.5, size = 22),
+    axis.title = element_text(size = 16) 
+  )
+
+ggsave(filename = "plots/global_sens.png")
 
 ggplot(results_plotting) +
   geom_bar(stat = "identity",
@@ -1051,12 +1107,19 @@ ggplot(results_plotting) +
   scale_y_continuous(
     breaks = seq(round(min(results_plotting$Specificity),3), max(results_plotting$Specificity), by = 0.005)
   ) +
+  geom_text(aes(x = param_iters, y = Specificity, label = round(Specificity, 3)), 
+            vjust = -0.3, size = 3.5)+
   theme(
-      axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 0.5, size = 12),
-      plot.title = element_text(hjust = 0.5, size = 22),
-      axis.title = element_text(size = 16) 
-    )
+    axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 0.5, size = 12),
+    plot.title = element_text(hjust = 0.5, size = 22),
+    axis.title = element_text(size = 16) 
+  )
+
+ggsave(filename = "plots/global_prec.png")
 ```
+<center>![](plots/global_acc.png)</center>
+<center>![](plots/global_sens.png)</center>
+<center>![](plots/global_prec.png)</center>
 
 Nakon analize svih rezultata na nivou svih metoda zaključujemo da najbolje performanse postiže 3. scenario metode stabla odlučivanja.
 
@@ -1134,7 +1197,7 @@ end_time <- proc.time()
 elapsed = end_time-start_time
 print(paste("Elapsed time:",round(elapsed[3] / 60,2)))
 ```
-![](dataset/elbow.png)
+![](plots/elbow.png)
 
 
 Klasterizacija prema 2 scenarija:
