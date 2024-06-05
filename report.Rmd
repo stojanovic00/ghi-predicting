@@ -645,6 +645,7 @@ print(paste("Elapsed time:",round(elapsed[3] / 60,2)))
 ```
 
 Na osnovu rezultata da se zaključiti da parametri u 3. scenariju postižu najbolje performanse
+
 #### Odnosi hiperparametara i performansi
 
 ```{r Logistic regression parameters vs performance, echo = F, fig.width=10, fig.height=10}
@@ -675,13 +676,6 @@ plot_reg_param_spec <- ggplot(plotting_df) +
   theme_bw() 
 
 
-ggarrange(plot_reg_param_acc,
-          plot_reg_param_sens,
-          plot_reg_param_spec,
-          ncol = 2, nrow = 2)
-
-
-
 
 plot_max_iter_acc <- ggplot(plotting_df) +
   geom_point(mapping = aes(x = max_iterations, y = accuracies)) +
@@ -706,10 +700,14 @@ plot_max_iter_spec <- ggplot(plotting_df) +
   theme_bw() 
 
 
-ggarrange(plot_max_iter_acc,
+ggarrange(plot_reg_param_acc,
+          plot_reg_param_sens,
+          plot_reg_param_spec,
+          
+          plot_max_iter_acc,
           plot_max_iter_sens,
           plot_max_iter_spec,
-          ncol = 2, nrow = 2)
+          ncol = 2, nrow = 3)
 
 ```
 
@@ -815,10 +813,6 @@ plot_reg_param_spec <- ggplot(plotting_df) +
   theme_bw() 
 
 
-ggarrange(plot_reg_param_acc,
-          plot_reg_param_sens,
-          plot_reg_param_spec,
-          ncol = 2, nrow = 2)
 
 
 
@@ -845,11 +839,14 @@ plot_max_iter_spec <- ggplot(plotting_df) +
        y = "Specificity") +
   theme_bw() 
 
+ggarrange(plot_reg_param_acc,
+          plot_reg_param_sens,
+          plot_reg_param_spec,
 
-ggarrange(plot_max_iter_acc,
+          plot_max_iter_acc,
           plot_max_iter_sens,
           plot_max_iter_spec,
-          ncol = 2, nrow = 2)
+          ncol = 2, nrow = 3)
 
 ```
 ### Stablo odlučivanja
@@ -925,9 +922,6 @@ print(paste("Elapsed time:",round(elapsed[3] / 60,2)))
 
 Na osnovu rezultata da se zaključiti da parametri u 3. scenariju postižu najbolje performanse.
 
-Nakon analize svih rezultata na nivou svih metoda zaključujemo da najbolje performanse postiže 3. scenario metode stabla odlučivanja.
-
-
 #### Odnosi hiperparametara i performansi
 
 ```{r decision tree parameters vs performance, echo = F, fig.width=10, fig.height=10}
@@ -958,10 +952,6 @@ plot_max_depth_spec <- ggplot(plotting_df) +
   theme_bw() 
 
 
-ggarrange(plot_max_depth_acc,
-          plot_max_depth_sens,
-          plot_max_depth_spec,
-          ncol = 2, nrow = 2)
 
 
 plot_min_instances_per_node_acc <- ggplot(plotting_df) +
@@ -986,13 +976,89 @@ plot_min_instances_per_node_spec <- ggplot(plotting_df) +
        y = "Specificity") +
   theme_bw() 
 
+ggarrange(plot_max_depth_acc,
+          plot_max_depth_sens,
+          plot_max_depth_spec,
 
-ggarrange(plot_min_instances_per_node_acc,
+          plot_min_instances_per_node_acc,
           plot_min_instances_per_node_sens,
           plot_min_instances_per_node_spec,
-          ncol = 2, nrow = 2)
+          ncol = 2, nrow = 3)
 ```
 
+
+```{r Calssification global visualisations, fig.height=8, echo = F}
+
+results_logreg_plotting <- results_logreg %>%
+  mutate(param_iters = paste("logreg:\n reg_param =", reg_parameter, "\n max_iterations =", max_iterations))
+  
+results_lsvc_plotting <- results_lsvc %>%
+  mutate(param_iters = paste("lsvc:\n reg_param =", reg_parameter, "\n max_iterations =", max_iterations))
+
+results_dt_plotting <- results_dt %>%
+  mutate(param_iters = paste("dt:\n max_depth =", max_depth, "\n min_instances_per_node =", min_instances_per_node))
+
+results_plotting <- rbind(results_logreg_plotting, results_lsvc_plotting, results_dt_plotting)
+
+# da bi prikazivao redom po redovima, a ne leksicki
+results_plotting$param_iters <- factor(results_plotting$param_iters, levels = results_plotting$param_iters)
+
+ggplot(results_plotting) +
+  geom_bar(stat = "identity",
+           aes(x = param_iters, y = Accuracy),
+           width = 0.9,
+           fill="steelblue")+ 
+  labs(title = "Accuracy over scenarios",
+       x = "Scenarios",
+       y = "Accuracy")+
+  coord_cartesian(ylim = range(results_plotting$Accuracy)) +
+  scale_y_continuous(
+    breaks = seq(round(min(results_plotting$Accuracy),3), max(results_plotting$Accuracy), by = 0.005)
+  ) +
+  theme(
+      axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 0.5, size = 12),
+      plot.title = element_text(hjust = 0.5, size = 22),
+      axis.title = element_text(size = 16) 
+    )
+
+ggplot(results_plotting) +
+  geom_bar(stat = "identity",
+           aes(x = param_iters, y = Sensitivity),
+           width = 0.9,
+           fill="steelblue")+ 
+  labs(title = "Sensitivity over scenarios",
+       x = "Scenarios",
+       y = "Sensitivity")+
+  coord_cartesian(ylim = range(results_plotting$Sensitivity)) +
+  scale_y_continuous(
+    breaks = seq(round(min(results_plotting$Sensitivity),3), max(results_plotting$Sensitivity), by = 0.005)
+  ) +
+  theme(
+      axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 0.5, size = 12),
+      plot.title = element_text(hjust = 0.5, size = 22),
+      axis.title = element_text(size = 16) 
+    )
+
+ggplot(results_plotting) +
+  geom_bar(stat = "identity",
+           aes(x = param_iters, y = Specificity),
+           width = 0.9,
+           fill="steelblue")+ 
+  labs(title = "Specificity over scenarios",
+       x = "Scenarios",
+       y = "Specificity")+
+  coord_cartesian(ylim = range(results_plotting$Specificity)) +
+  scale_y_continuous(
+    breaks = seq(round(min(results_plotting$Specificity),3), max(results_plotting$Specificity), by = 0.005)
+  ) +
+  theme(
+      axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 0.5, size = 12),
+      plot.title = element_text(hjust = 0.5, size = 22),
+      axis.title = element_text(size = 16) 
+    )
+```
+
+Nakon analize svih rezultata na nivou svih metoda zaključujemo da najbolje performanse postiže 3. scenario metode stabla odlučivanja.
 
 ## Klasterizacija
 
@@ -1095,7 +1161,7 @@ cluster_k_12
 ```
 
 
-```{r Preparing unormalized table for clustering visualization}
+```{r Preparing unnormalized table for clustering visualization}
 predicted_clusters_6 <- ml_predict(cluster_k_6, df_spark_normalized)
 predicted_clusters_6 %<>% 
   select(prediction) %>% 
@@ -1108,6 +1174,7 @@ predicted_clusters_12 %<>%
 
 
 df_spark <- sdf_bind_cols(df_spark,predicted_clusters_6, predicted_clusters_12)
+df_spark
 ```
 
 
@@ -1122,6 +1189,8 @@ long_lat_clust_6 <- ggplot(df_spark, aes(x = longitude, y = latitude, color = cl
        y = "Latitude")
 long_lat_clust_6
 ```
+
+
 
 
 ## Zatvaranje spark konekcije
